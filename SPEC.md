@@ -408,6 +408,28 @@ acceptable trade.
   updates appear — don't rely solely on live push for state that may
   have been missed while disconnected.
 
+**Real bug, easy to misdiagnose as a cookie/session problem**: the
+Socket.IO client script was loaded via a plain relative
+`<script src="socket.io/socket.io.js">`. Relative URLs resolve
+differently depending on whether the page URL has a trailing slash —
+`/design/` resolves it to `/design/socket.io/socket.io.js` (correct),
+but `/design` with no trailing slash (a bookmark, address-bar
+autocomplete, a typed URL — all common) resolves it to
+`/socket.io/socket.io.js` at the domain root instead, which 404s.
+Since the 404 response is Express's default HTML error page, the
+browser refuses to execute it as a script (MIME type mismatch), so
+`io` is never defined — and the very next line (`const socket =
+io(...)`) throws, silently killing the rest of the page's script
+before anything else runs, including the code that would show "Live",
+populate the "Working as" pills, or load the queue. The page itself
+still loads fine (it's a separate request), which is what made this
+look like an auth/cookie issue: the header renders, the socket status
+just sits frozen on the hardcoded initial "Connecting" text forever,
+with no staff pills. Fix: compute the script's path explicitly via
+`document.write` using the same `location.pathname.replace(/\/$/, "")`
+logic already used everywhere else in this file for `BASE`, rather
+than relying on the browser's relative-URL resolution.
+
 ## 12. Auth & network security (defence in depth, both layers required)
 
 - **Layer 1 — Nginx IP allowlist** on the `/design` location: workshop

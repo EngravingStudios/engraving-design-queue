@@ -211,7 +211,20 @@
   <span id="connInfo"></span>
 </footer>
 
-<script src="socket.io/socket.io.js"></script>
+<script>
+/* Real bug: a plain relative src here resolves differently depending
+   on whether the page URL has a trailing slash — "/design/" resolves
+   it to "/design/socket.io/socket.io.js" (correct), but "/design"
+   (no slash — bookmarks, address-bar autocomplete, a typed URL)
+   resolves it to "/socket.io/socket.io.js" at the domain root, which
+   404s. That silently kills the rest of the page's script (the next
+   line calls io(), which is then undefined) before anything —
+   including the code that would show "Live" or load the queue —
+   ever runs. Compute the path explicitly instead of relying on the
+   browser's relative-URL guesswork, same way BASE is computed below.
+*/
+document.write('<script src="' + location.pathname.replace(/\/$/, "") + '/socket.io/socket.io.js"><\/script>');
+</script>
 <script>
 "use strict";
 /* ═══════════════ Config, state, socket ═══════════════ */
