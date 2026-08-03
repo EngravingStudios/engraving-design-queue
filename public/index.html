@@ -467,7 +467,15 @@ function renderQueue(){
           const fr=(l.front&&c.front)?simRatio(l.front,c.front):0;
           const bk=(l.back&&c.back)?simRatio(l.back,c.back):0;
           const r=Math.max(fr,bk);
-          if(r>=SIM_THRESHOLD&&(!(i in sims)||r>sims[i].r)) sims[i]={j,r};
+          /* Track which side(s) actually matched, not just whether
+             the line matched at all — otherwise a front-only match
+             (e.g. near-identical owner/address, unrelated back text)
+             gets the back word-diffed against a completely different
+             sentence too, lighting up almost every word for no
+             reason. Only diff-highlight the side(s) that are
+             genuinely similar; render the other side plainly. */
+          if(r>=SIM_THRESHOLD&&(!(i in sims)||r>sims[i].r))
+            sims[i]={j,r,front:fr>=SIM_THRESHOLD,back:bk>=SIM_THRESHOLD};
         });
       });
 
@@ -475,9 +483,10 @@ function renderQueue(){
       const isMulti=o.lines.length>1;   /* any multi-line order gets the dashed wrapper */
       block.className="order-block"+(isMulti?" multi":"");
       o.lines.forEach((l,li)=>{
-        const sim=sims[li]?o.lines[sims[li].j]:null;
-        const frontHTML=l.front?(sim?diffHTML(l.front,sim.front):esc(l.front).replace(/\n/g,"<br>")):null;
-        const backHTML =l.back ?(sim?diffHTML(l.back, sim.back ):esc(l.back ).replace(/\n/g,"<br>")):null;
+        const simInfo=sims[li];
+        const sim=simInfo?o.lines[simInfo.j]:null;
+        const frontHTML=l.front?((sim&&simInfo.front)?diffHTML(l.front,sim.front):esc(l.front).replace(/\n/g,"<br>")):null;
+        const backHTML =l.back ?((sim&&simInfo.back )?diffHTML(l.back, sim.back ):esc(l.back ).replace(/\n/g,"<br>")):null;
         const wrap=document.createElement("div");
         wrap.className="line-wrap"+((isMixed||sim)?" has-banner":"");
         const odd = isMixed && l.productName!==type;

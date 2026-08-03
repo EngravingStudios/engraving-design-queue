@@ -169,6 +169,17 @@ regardless of how different the back is, and vice versa.
   field.
 - **Clearly different** → no warning; keeps the signal meaningful.
 
+**Second real bug, found right after the first fix**: diff-highlighting
+was applied to BOTH sides whenever the line matched at all, not just
+the side that actually matched. In the siblings' pet tag example above,
+once the front-only match correctly triggers the banner, the back was
+*also* being word-diffed against a completely unrelated sentence —
+since they share almost no words, nearly the entire back plate lit up
+in `<mark>`, which is exactly the "whole field highlighted" outcome
+this feature is meant to avoid. Fix: track which side(s) actually hit
+the threshold (front, back, or both) and only diff-highlight those —
+a side that didn't match renders plainly, with no highlighting at all.
+
 **Deliberately scoped to within-order only** — cross-order similarity
 (two different customers, similar tags) was explicitly rejected as
 noise that would train staff to ignore the warning.
