@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>ES Design Queue — Sign in</title>
+<style>
+  :root{--bench:#1d2126;--panel:#262b31;--panel-edge:#31373f;--brass:#c9a24b;--brass-hi:#e8cf8f;--ink:#e8eaed;--ink-dim:#9aa3ad}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"Segoe UI",system-ui,sans-serif;background:var(--bench);color:var(--ink);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+  .card{background:var(--panel);border:1px solid var(--panel-edge);border-radius:14px;padding:34px 36px;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,.4)}
+  h1{font-size:18px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px}
+  h1 span{color:var(--brass)}
+  .sub{font-size:12px;color:var(--ink-dim);margin-bottom:26px}
+  label{display:block;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-dim);margin-bottom:6px}
+  input{width:100%;font:inherit;font-size:15px;color:var(--ink);background:#1a1e23;border:1px solid var(--panel-edge);border-radius:8px;padding:12px 14px;margin-bottom:18px}
+  input:focus{outline:none;border-color:var(--brass)}
+  button{width:100%;cursor:pointer;font:inherit;font-size:14px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:13px;border-radius:8px;border:none;background:var(--brass);color:#1d2126;transition:filter .15s}
+  button:hover{filter:brightness(1.08)}
+  button:disabled{filter:grayscale(.6);cursor:wait}
+  .err{color:#d96a6a;font-size:13px;min-height:18px;margin-bottom:12px;text-align:center}
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1><span>ES</span> Design Queue</h1>
+    <div class="sub">Engraving Studios — staff only</div>
+    <label for="u">Username</label>
+    <input id="u" autocomplete="username" autocapitalize="none">
+    <label for="p">Password</label>
+    <input id="p" type="password" autocomplete="current-password">
+    <div class="err" id="err"></div>
+    <button id="go">Sign in</button>
+  </div>
+<script>
+  const BASE = location.pathname.replace(/\/login\/?$/, "");
+  async function login(){
+    const btn = document.getElementById("go");
+    btn.disabled = true;
+    document.getElementById("err").textContent = "";
+    const res = await fetch(BASE + "/login", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({
+        username: document.getElementById("u").value.trim(),
+        password: document.getElementById("p").value,
+      }),
+    }).catch(()=>null);
+    btn.disabled = false;
+    if(res && res.ok){ location.href = BASE + "/"; return; }
+    document.getElementById("err").textContent = "Wrong username or password";
+    document.getElementById("p").value = "";
+    document.getElementById("p").focus();
+  }
+  document.getElementById("go").addEventListener("click", login);
+  document.getElementById("p").addEventListener("keydown", e=>{ if(e.key==="Enter") login(); });
+  document.getElementById("u").focus();
+</script>
+</body>
+</html>

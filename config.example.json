@@ -1,0 +1,46 @@
+{
+  "port": 3050,
+  "basePath": "/design",
+
+  "sharedConfigFile": "/etc/orders-app/config.php",
+
+  "db": {
+    "host": "@shared:db_design.host",
+    "port": "@shared:db_design.port",
+    "database": "@shared:db_design.database",
+    "user": "@shared:db_design.username",
+    "password": "@shared:db_design.password",
+    "ssl": true,
+    "connectionLimit": 10
+  },
+
+  "auth": {
+    "username": "esdesign",
+    "passwordHash": "@shared:design_queue.password_hash",
+    "sessionSecret": "@shared:design_queue.session_secret"
+  },
+
+  "helpscout": {
+    "mailboxId": "@shared:helpscout.mailbox_id",
+    "clientId": "@shared:helpscout.client_id",
+    "clientSecret": "@shared:helpscout.client_secret",
+    "issueCustomerEmail": "design-queue@engravingstudios.co.uk"
+  },
+
+  "statuses": {
+    "batches": [
+      { "value": "print_1st_batch", "label": "Batch 1" },
+      { "value": "print_2nd_batch", "label": "Batch 2" },
+      { "value": "print_3rd_batch", "label": "Batch 3" },
+      { "value": "print_4th_batch", "label": "Batch 4" }
+    ],
+    "target": { "value": "label_hold", "label": "Label Hold" },
+    "issue":  { "value": "pending",    "label": "Pending" }
+  },
+
+  "excludedGroupIds": [15],
+
+  "staff": ["Alisha", "Andy", "Callum", "Drew", "Gary", "James", "Mandy", "Mikey"],
+
+  "fulfilmentOrderUrl": "https://fulfilment.engravingstudios.co.uk/orders/"
+}

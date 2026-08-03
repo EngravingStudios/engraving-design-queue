@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>ES Design Queue</title>
+<style>
+  :root{
+    --bench:#1d2126; --panel:#262b31; --panel-edge:#31373f;
+    --brass:#c9a24b; --brass-hi:#e8cf8f;
+    --ink:#e8eaed; --ink-dim:#9aa3ad;
+    --green:#4fc37e; --blue:#5aa9e6; --amber:#e6a23c; --done:#1f2a24;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"Segoe UI",system-ui,-apple-system,sans-serif;background:var(--bench);color:var(--ink);padding-bottom:60px}
+
+  header{position:sticky;top:0;z-index:10;background:linear-gradient(#22272d,#1d2126);border-bottom:1px solid var(--panel-edge);padding:14px 22px 0}
+  .head-row{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+  h1{font-size:17px;font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+  h1 span{color:var(--brass)}
+  .live{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.08em;margin-left:14px}
+  .live::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);animation:pulse 2s infinite}
+  .live.off::before{background:#d96a6a;box-shadow:0 0 6px #d96a6a;animation:none}
+  @keyframes pulse{50%{opacity:.4}}
+
+  .who{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .who-label{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-dim)}
+  .who-pill{cursor:pointer;user-select:none;font-size:13px;font-weight:700;padding:8px 16px;border-radius:18px;border:1px solid var(--panel-edge);background:#20252b;color:var(--ink-dim);transition:all .15s}
+  .who-pill.active{background:var(--brass);border-color:var(--brass);color:#1d2126;box-shadow:0 0 10px rgba(201,162,75,.4)}
+
+  .progress-wrap{margin-top:10px;display:grid;gap:6px}
+  .prow{display:flex;align-items:center;gap:12px}
+  .plabel{width:74px;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;text-align:right}
+  .plabel.d{color:var(--blue)} .plabel.v{color:var(--green)}
+  .bar{flex:1;height:9px;border-radius:5px;background:#14171b;border:1px solid var(--panel-edge);overflow:hidden}
+  .bar i{display:block;height:100%;width:0%;transition:width .4s ease}
+  .bar.d i{background:linear-gradient(90deg,#3a7fb5,var(--blue))}
+  .bar.v i{background:linear-gradient(90deg,#2e8f57,var(--green))}
+  .pct{font-size:13px;font-weight:700;min-width:48px;text-align:right;font-variant-numeric:tabular-nums}
+  .pct.d{color:var(--blue)} .pct.v{color:var(--green)}
+
+  .tabs{display:flex;gap:4px;margin-top:12px;overflow-x:auto}
+  .tab{cursor:pointer;user-select:none;white-space:nowrap;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-dim);padding:10px 16px;border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;transition:all .15s}
+  .tab:hover{color:var(--ink)}
+  .tab.active{background:var(--bench);border-color:var(--panel-edge);color:var(--brass-hi);position:relative;top:1px}
+  .tab .count{font-size:11px;font-variant-numeric:tabular-nums;background:#2b3138;color:var(--ink);border-radius:10px;padding:1px 8px;min-width:24px;text-align:center}
+  .tab.active .count{background:var(--brass);color:#1d2126}
+  .move-btn{margin-left:auto;align-self:center;cursor:pointer;font:inherit;font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:9px 18px;border-radius:8px;border:1px solid var(--panel-edge);background:#20252b;color:#5c6670;transition:all .2s}
+  .move-btn:disabled{cursor:not-allowed}
+  .move-btn.ready{background:var(--green);border-color:var(--green);color:#12271b;box-shadow:0 0 14px rgba(79,195,126,.45)}
+  .move-btn.ready:hover{filter:brightness(1.1)}
+
+  main{max-width:1240px;margin:18px auto;padding:0 18px}
+  .empty-batch{text-align:center;color:var(--ink-dim);font-size:14px;padding:60px 20px;border:1px dashed var(--panel-edge);border-radius:10px;margin-top:10px}
+
+  .type-break{display:flex;align-items:center;gap:16px;margin:36px 0 14px;
+    position:sticky;top:var(--header-h,0px);z-index:5;
+    background:var(--bench);padding:8px 0}
+  .group:first-child .type-break{margin-top:6px}
+  .type-break .rule{flex:1;height:2px;background:linear-gradient(90deg,var(--gacc),transparent)}
+  .type-break .rule.left{background:linear-gradient(270deg,var(--gacc),transparent)}
+  .type-name{font-size:22px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--gacc);padding:10px 26px;background:#20242a;border:2px solid var(--gacc);border-radius:28px;white-space:nowrap;max-width:70vw;overflow:hidden;text-overflow:ellipsis}
+  .type-count{font-size:12px;color:var(--ink);font-weight:700;letter-spacing:.05em;background:#20242a;border:1px solid var(--panel-edge);border-radius:14px;padding:6px 14px;white-space:nowrap}
+  .type-count b{color:var(--gacc);font-size:15px}
+  .group{border-left:4px solid var(--gacc);border-radius:4px}
+
+  .order-block{margin:0 0 10px 10px}
+  .order-block.multi{border:1px dashed var(--amber);border-radius:10px;padding:8px;background:rgba(230,162,60,.04)}
+  .mix-banner.odd{background:#d96a6a}
+  .mix-banner.odd .pos{color:#d96a6a}
+  .mix-banner .ptype{font-weight:900}
+  .mix-banner.odd .ptype{background:#a83232;color:#fff;padding:0 8px;border-radius:3px}
+  .order-block .line-wrap{margin-bottom:8px}
+  .order-block .line-wrap:last-child{margin-bottom:0}
+  .hidden-note{font-size:10px;color:#5c6670;padding:4px 6px 0;letter-spacing:.04em}
+
+  .mix-banner{display:flex;align-items:center;gap:10px;background:var(--amber);color:#1d2126;font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;padding:5px 14px;border-radius:8px 8px 0 0}
+  .mix-banner .pos{background:#1d2126;color:var(--amber);border-radius:3px;padding:1px 7px;font-size:10px}
+  .sim-banner{display:flex;align-items:center;gap:10px;background:#d96a6a;color:#1d2126;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:5px 14px;border-radius:8px 8px 0 0}
+  .line-wrap .mix-banner + .sim-banner{border-radius:0}
+  .line-wrap.has-banner .line{border-radius:0 0 8px 8px;border-top:none}
+
+  .line{display:grid;grid-template-columns:170px minmax(0,1fr) 96px auto;gap:16px;align-items:center;background:var(--panel);border:1px solid var(--panel-edge);border-radius:8px;padding:12px 16px;transition:box-shadow .25s,border-color .25s,opacity .3s}
+  .line.focused{border-color:var(--brass);box-shadow:0 0 0 1px var(--brass),0 6px 24px rgba(0,0,0,.35)}
+  .line.done{background:var(--done);opacity:.5}
+
+  .order-ref{min-width:0}
+  .order-id{font-weight:700;font-size:14px;letter-spacing:.02em;display:block;color:var(--ink);text-decoration:none}
+  .order-id:hover{color:var(--brass-hi);text-decoration:underline}
+  .variant{font-size:11px;color:var(--ink-dim);margin-top:6px;line-height:1.35;overflow-wrap:anywhere}
+
+  .plates{display:grid;grid-template-columns:1fr 1fr;gap:10px;min-width:0}
+  .plate-slot .slot-label{font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);margin-bottom:4px;text-align:center}
+  .plate{position:relative;cursor:copy;font-family:"Segoe UI",system-ui,-apple-system,sans-serif;font-weight:500;font-size:14px;line-height:1.5;color:#3a2f14;text-align:center;display:flex;align-items:center;justify-content:center;background:linear-gradient(160deg,#e9d194 0%,#c9a24b 55%,#dfc07a 100%);border:1px solid #8a6f2e;border-radius:4px;padding:8px 12px;min-height:48px;height:calc(100% - 17px);box-shadow:inset 0 1px 0 rgba(255,255,255,.5),inset 0 -2px 4px rgba(0,0,0,.18);white-space:pre-wrap;word-break:break-word;transition:transform .08s}
+  .plate:hover{filter:brightness(1.06)}
+  .plate:active{transform:scale(.985)}
+  .plate .pt{display:block;width:100%}
+  .plate.empty{cursor:default;font-weight:400;background:#20252b;border:1px dashed #3a424c;box-shadow:none;color:#5c6670;font-style:italic;font-size:12px}
+  .plate mark{background:#a83232;color:#fff;border-radius:3px;padding:0 5px;font-weight:700;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+  .plate .copied{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(29,33,38,.88);color:var(--green);font-weight:700;font-size:13px;border-radius:3px}
+  .plate.flash .copied{display:flex}
+
+  .qty{display:flex;flex-direction:column;align-items:center;justify-content:center;width:96px;height:66px;border-radius:8px;background:#20252b;border:1px solid var(--panel-edge)}
+  .qty .n{font-size:30px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;color:var(--ink)}
+  .qty small{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);margin-top:3px}
+  .qty.multi{background:var(--amber);border-color:var(--amber);box-shadow:0 0 14px rgba(230,162,60,.5)}
+  .qty.multi .n,.qty.multi small{color:#1d2126}
+
+  .ticks{display:flex;gap:10px}
+  .tick{display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent}
+  .tick input{display:none}
+  .tick .box{width:44px;height:44px;border-radius:8px;border:2px solid #444c56;background:#1a1e23;display:flex;align-items:center;justify-content:center;font-size:22px;color:transparent;transition:all .15s}
+  .tick.designed input:checked + .box{border-color:var(--blue);background:var(--blue);color:#fff}
+  .tick.verified input:checked + .box{border-color:var(--green);background:var(--green);color:#12271b}
+  .tick.issue .box{font-size:17px;color:#5c6670}
+  .tick.issue:hover .box{border-color:#d96a6a;color:#d96a6a}
+  .tick small{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-dim)}
+  .tick .by{font-size:9px;color:#5c6670;min-height:11px;text-align:center}
+
+  .overlay{position:fixed;inset:0;z-index:50;background:rgba(15,18,21,.75);display:none;align-items:center;justify-content:center;padding:20px}
+  .overlay.show{display:flex}
+  .modal{background:var(--panel);border:1px solid var(--amber);border-radius:12px;max-width:440px;width:100%;padding:22px 24px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+  .modal h2{font-size:15px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--amber);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+  .modal p{font-size:13px;line-height:1.55;color:var(--ink);margin-bottom:14px}
+  .modal textarea{width:100%;min-height:110px;resize:vertical;font:inherit;font-size:13px;color:var(--ink);background:#1a1e23;border:1px solid var(--panel-edge);border-radius:7px;padding:10px 12px;margin-bottom:14px}
+  .modal textarea:focus{outline:none;border-color:var(--brass)}
+  .modal.red{border-color:#d96a6a}
+  .modal.red h2{color:#d96a6a}
+  .modal-btns{display:flex;gap:10px;justify-content:flex-end}
+  .modal-btns button{cursor:pointer;font:inherit;font-size:12px;font-weight:700;padding:10px 16px;border-radius:7px;border:1px solid var(--panel-edge)}
+  .btn-cancel{background:#20252b;color:var(--ink)}
+  .btn-confirm{background:var(--amber);border-color:var(--amber);color:#1d2126}
+  .btn-danger{background:#d96a6a;border-color:#d96a6a;color:#1d2126}
+
+  .toast{position:fixed;bottom:54px;left:50%;transform:translateX(-50%) translateY(20px);z-index:60;opacity:0;pointer-events:none;background:var(--green);color:#12271b;font-size:13px;font-weight:700;padding:10px 22px;border-radius:24px;box-shadow:0 8px 30px rgba(0,0,0,.4);transition:all .3s}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .toast.err{background:#d96a6a;color:#1d2126}
+
+  footer{position:fixed;bottom:0;left:0;right:0;background:#191d21;border-top:1px solid var(--panel-edge);padding:8px 22px;font-size:11px;color:var(--ink-dim);display:flex;justify-content:space-between}
+
+  @media(max-width:900px){
+    .line{grid-template-columns:1fr;gap:10px}
+    .plates{grid-template-columns:1fr}
+    .plate{height:auto}
+    .qty{width:100%;height:48px;flex-direction:row;gap:8px}
+    .qty .n{font-size:24px}
+    .ticks{justify-content:flex-end}
+    .plabel{width:60px}
+    .type-name{font-size:15px;padding:8px 16px}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="head-row">
+    <h1><span>ES</span> Design Queue<span class="live off" id="liveDot">Connecting</span></h1>
+    <div class="who" id="who"><span class="who-label">Working as</span></div>
+  </div>
+  <div class="progress-wrap">
+    <div class="prow"><div class="plabel d">Designed</div><div class="bar d"><i id="barD"></i></div><div class="pct d" id="pctD">0%</div></div>
+    <div class="prow"><div class="plabel v">Verified</div><div class="bar v"><i id="barV"></i></div><div class="pct v" id="pctV">0%</div></div>
+  </div>
+  <nav class="tabs" id="tabs"></nav>
+</header>
+
+<main id="queue"></main>
+
+<div class="overlay" id="moveOverlay">
+  <div class="modal">
+    <h2>⚠ Orders already in <span id="moveTargetName"></span></h2>
+    <p id="moveMsg"></p>
+    <div class="modal-btns">
+      <button class="btn-cancel" id="moveCancel">Cancel</button>
+      <button class="btn-confirm" id="moveConfirm">Yes, combine and move</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="diffOverlay">
+  <div class="modal red">
+    <h2>⚠ Different product!</h2>
+    <p id="diffMsg"></p>
+    <div class="modal-btns">
+      <button class="btn-cancel" id="diffCancel">Cancel</button>
+      <button class="btn-confirm" id="diffConfirm">Yes — copy it</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="issueOverlay">
+  <div class="modal red">
+    <h2>⛔ Report an issue</h2>
+    <p id="issueOrderLabel"></p>
+    <textarea id="issueNotes" placeholder="Describe the problem with this order — e.g. engraving text too long for tag size, missing back text, suspected typo…"></textarea>
+    <div class="modal-btns">
+      <button class="btn-cancel" id="issueCancel">Cancel</button>
+      <button class="btn-danger" id="issueSubmit">Create ticket &amp; set Pending</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<footer>
+  <span>ES Design Queue</span>
+  <span id="connInfo"></span>
+</footer>
+
+<script src="socket.io/socket.io.js"></script>
+<script>
+"use strict";
+/* ═══════════════ Config, state, socket ═══════════════ */
+const BASE = location.pathname.replace(/\/$/, "");
+let CFG = null;                 /* from /api/config */
+let currentStatus = null;       /* status VALUE, e.g. print_1st_batch */
+let currentUser = localStorage.getItem("dq_user") || null;
+let orders = [];                /* current batch data from server */
+let counts = {};                /* order counts per status */
+const ackedLines = new Set();   /* different-product warnings accepted */
+let copyTexts = [];
+
+const socket = io({ path: BASE + "/socket.io" });
+
+/* keep sticky group headers pinned exactly below the main header */
+function setHeaderH(){
+  document.documentElement.style.setProperty(
+    "--header-h", document.querySelector("header").offsetHeight + "px");
+}
+window.addEventListener("resize", setHeaderH);
+new ResizeObserver(setHeaderH).observe(document.querySelector("header"));
+const $ = (id) => document.getElementById(id);
+
+socket.on("connect", () => {
+  $("liveDot").textContent = "Live";
+  $("liveDot").classList.remove("off");
+  /* resync on every (re)connect — catches anything missed while asleep */
+  if (currentStatus) loadQueue();
+});
+socket.on("disconnect", () => {
+  $("liveDot").textContent = "Offline";
+  $("liveDot").classList.add("off");
+});
+socket.on("connect_error", (e) => {
+  if (String(e.message).includes("unauthorised")) location.href = BASE + "/login";
+});
+
+/* another screen ticked something */
+socket.on("tick", ({ itemId, state }) => {
+  const line = orders.flatMap(o => o.lines).find(l => l.itemId === itemId);
+  if (line) {
+    line.designedBy = state.designed_by; line.designedAt = state.designed_at;
+    line.verifiedBy = state.verified_by; line.verifiedAt = state.verified_at;
+    updateLineDOM(itemId);
+    refreshProgress();
+  }
+});
+
+/* batch moved or issue raised somewhere — refetch */
+socket.on("orders_changed", () => loadQueue());
+
+/* ═══════════════ Boot ═══════════════ */
+(async function boot() {
+  const res = await fetch(BASE + "/api/config");
+  if (res.status === 401) return (location.href = BASE + "/login");
+  CFG = await res.json();
+  if (!CFG.staff.includes(currentUser)) currentUser = null;
+  renderWho();
+  currentStatus = CFG.statuses.batches[0].value;
+  await loadQueue();
+})();
+
+function renderWho() {
+  const who = $("who");
+  who.querySelectorAll(".who-pill").forEach(p => p.remove());
+  CFG.staff.forEach(name => {
+    const p = document.createElement("span");
+    p.className = "who-pill" + (name === currentUser ? " active" : "");
+    p.textContent = name;
+    p.addEventListener("click", () => {
+      currentUser = name;
+      localStorage.setItem("dq_user", name);
+      renderWho();
+    });
+    who.appendChild(p);
+  });
+}
+
+function requireUser() {
+  if (currentUser) return true;
+  toast("Pick your name at the top first", true);
+  return false;
+}
+
+/* ═══════════════ Data loading ═══════════════ */
+async function loadQueue() {
+  const res = await fetch(BASE + "/api/queue?status=" + encodeURIComponent(currentStatus));
+  if (res.status === 401) return (location.href = BASE + "/login");
+  const data = await res.json();
+  if (data.error) return toast(data.error, true);
+  orders = data.orders;
+  counts = data.counts;
+  renderTabs();
+  renderQueue();
+}
+
+/* ═══════════════ Sort tiers & similarity (unchanged logic) ═══════════════ */
+function words(s){ return s ? s.trim().split(/\s+/).filter(Boolean).length : 0; }
+function sortRank(l){
+  const f = words(l.front), b = words(l.back);
+  if (f > 0 && b > 0) return (f > 1 && b > 1) ? 1 : 2;
+  return 3;
+}
+function levenshtein(a, b){
+  const m=a.length, n=b.length;
+  if(!m) return n; if(!n) return m;
+  let prev = Array.from({length:n+1}, (_,i)=>i);
+  for(let i=1;i<=m;i++){
+    const cur=[i];
+    for(let j=1;j<=n;j++)
+      cur[j]=Math.min(prev[j]+1,cur[j-1]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));
+    prev=cur;
+  }
+  return prev[n];
+}
+const SIM_THRESHOLD = 0.65;
+function simRatio(a,b){ const L=Math.max(a.length,b.length); return L?1-levenshtein(a,b)/L:0; }
+function combinedText(l){ return ((l.front||"")+"\n"+(l.back||"")).trim(); }
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function attrEsc(s){ return esc(s).replace(/"/g,"&quot;"); }
+function diffHTML(text, other){
+  const tok = s => (s||"").replace(/\n/g," \u0000 ").split(/\s+/).filter(Boolean);
+  const a=tok(text), b=tok(other);
+  const m=a.length, n=b.length;
+  const dp=Array.from({length:m+1},()=>new Array(n+1).fill(0));
+  for(let i=m-1;i>=0;i--)for(let j=n-1;j>=0;j--)
+    dp[i][j]=a[i]===b[j]?dp[i+1][j+1]+1:Math.max(dp[i+1][j],dp[i][j+1]);
+  const keep=new Array(m).fill(false);
+  let i=0,j=0;
+  while(i<m&&j<n){
+    if(a[i]===b[j]){keep[i]=true;i++;j++;}
+    else if(dp[i+1][j]>=dp[i][j+1])i++; else j++;
+  }
+  return a.map((t,k)=>t==="\u0000"?"<br>":(keep[k]?esc(t):`<mark>${esc(t)}</mark>`)).join(" ")
+    .replace(/\s*<br>\s*/g,"<br>");
+}
+/* True per-product colour: deterministic hash of the product ID into
+   the full hue wheel (not a fixed palette), so every product gets its
+   own permanent colour with no arbitrary ceiling on how many are
+   distinct. Fixed saturation/lightness keep every hue equally legible
+   against the dark background. Overrides come from an optional
+   product-colours.json file, keyed by product_id, if you ever want to
+   hand-pick a specific one. */
+function hashHue(id){
+  const s = String(id);
+  let h = 0;
+  for(let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) >>> 0;
+  return h % 360;
+}
+function typeColour(name, productId, override){
+  if(override) return override;                  /* product-colours.json */
+  if(productId==null || name==="Unmapped") return "#8a93a0";
+  return `hsl(${hashHue(productId)}, 58%, 56%)`;
+}
+
+/* ═══════════════ Tabs ═══════════════ */
+function renderTabs(){
+  const tabsEl=$("tabs");
+  tabsEl.innerHTML="";
+  const all=[...CFG.statuses.batches, CFG.statuses.target];
+  all.forEach(s=>{
+    const t=document.createElement("div");
+    t.className="tab"+(s.value===currentStatus?" active":"");
+    t.innerHTML=`${esc(s.label)} <span class="count">${counts[s.value] ?? 0}</span>`;
+    t.addEventListener("click", ()=>{ currentStatus=s.value; loadQueue(); });
+    tabsEl.appendChild(t);
+  });
+  if(CFG.statuses.batches.some(b=>b.value===currentStatus)){
+    const label=CFG.statuses.batches.find(b=>b.value===currentStatus).label;
+    const btn=document.createElement("button");
+    btn.className="move-btn"; btn.id="moveBtn"; btn.disabled=true;
+    btn.textContent=`Move ${label} → ${CFG.statuses.target.label}`;
+    btn.addEventListener("click", requestMove);
+    tabsEl.appendChild(btn);
+  }
+}
+
+/* ═══════════════ Queue rendering ═══════════════ */
+function regCopy(text){ copyTexts.push(text); return copyTexts.length-1; }
+
+function renderQueue(){
+  const queue=$("queue");
+  queue.innerHTML="";
+  copyTexts=[];
+
+  if(!orders.length){
+    const label=[...CFG.statuses.batches,CFG.statuses.target].find(s=>s.value===currentStatus)?.label||currentStatus;
+    queue.innerHTML=`<div class="empty-batch">No orders in “${esc(label)}”. Nothing to do here — put the kettle on.</div>`;
+    refreshProgress();
+    return;
+  }
+
+  const typeOrder=[...new Set(orders.map(o=>o.lines[0].productName))];
+
+  typeOrder.forEach(type=>{
+    const group=document.createElement("div");
+    group.className="group";
+    const groupOrders=orders.filter(o=>o.lines[0].productName===type);
+    const repLine=groupOrders[0].lines[0];
+    const colour=typeColour(type, repLine.productId, repLine.colour);
+    group.style.setProperty("--gacc", colour);
+    const totalParts=groupOrders.flatMap(o=>o.lines).reduce((s,l)=>s+l.qty,0);
+
+    groupOrders.sort((a,b)=>{
+      const ra=sortRank(a.lines[0]), rb=sortRank(b.lines[0]);
+      return ra-rb || b.lines[0].qty-a.lines[0].qty;
+    });
+
+    group.innerHTML=`
+      <div class="type-break">
+        <div class="rule left"></div>
+        <div class="type-name">${esc(type)}</div>
+        <span class="type-count">Quantity: <b>${totalParts}</b></span>
+        <div class="rule"></div>
+      </div>`;
+
+    groupOrders.forEach(o=>{
+      const isMixed=new Set(o.lines.map(l=>l.productName)).size>1;
+
+      const sims={};
+      o.lines.forEach((l,i)=>{
+        const A=combinedText(l); if(!A) return;
+        o.lines.forEach((c,j)=>{
+          if(i===j) return;
+          const B=combinedText(c); if(!B||A===B) return;
+          const r=simRatio(A,B);
+          if(r>=SIM_THRESHOLD&&(!(i in sims)||r>sims[i].r)) sims[i]={j,r};
+        });
+      });
+
+      const block=document.createElement("div");
+      const isMulti=o.lines.length>1;   /* any multi-line order gets the dashed wrapper */
+      block.className="order-block"+(isMulti?" multi":"");
+      o.lines.forEach((l,li)=>{
+        const sim=sims[li]?o.lines[sims[li].j]:null;
+        const frontHTML=l.front?(sim?diffHTML(l.front,sim.front):esc(l.front).replace(/\n/g,"<br>")):null;
+        const backHTML =l.back ?(sim?diffHTML(l.back, sim.back ):esc(l.back ).replace(/\n/g,"<br>")):null;
+        const wrap=document.createElement("div");
+        wrap.className="line-wrap"+((isMixed||sim)?" has-banner":"");
+        const odd = isMixed && l.productName!==type;
+        wrap.innerHTML=(isMixed?`
+          <div class="mix-banner${odd?" odd":""}">
+            <span class="pos">${li+1} of ${o.lines.length}</span>
+            Mixed order #${o.id} — <span class="ptype">${esc(l.productName)}</span>${odd?" — different product!":""}
+          </div>`:"")+(sim?`
+          <div class="sim-banner">⚠ Similar item in this order — NOT identical, differences highlighted</div>`:"")+`
+        <div class="line" data-item="${l.itemId}" ${isMixed&&l.productName!==type?'data-odd="1"':""} data-line-type="${attrEsc(l.productName)}" data-group-type="${attrEsc(type)}">
+          <div class="order-ref">
+            <a class="order-id" href="${attrEsc(CFG.fulfilmentOrderUrl+o.id)}" target="_blank" rel="noopener">#${o.id}</a>
+            ${l.unmapped?`<div class="variant">${esc(l.rawName||"")}</div>`:""}
+          </div>
+          <div class="plates">
+            <div class="plate-slot">
+              <div class="slot-label">Front</div>
+              ${frontHTML
+                ?`<div class="plate" data-ci="${regCopy(l.front)}"><span class="pt">${frontHTML}</span><span class="copied">✓ Copied</span></div>`
+                :`<div class="plate empty">No front engraving</div>`}
+            </div>
+            <div class="plate-slot">
+              <div class="slot-label">Back</div>
+              ${backHTML
+                ?`<div class="plate" data-ci="${regCopy(l.back)}"><span class="pt">${backHTML}</span><span class="copied">✓ Copied</span></div>`
+                :`<div class="plate empty">No back engraving</div>`}
+            </div>
+          </div>
+          <div class="qty ${l.qty>1?"multi":""}"><span class="n">×${l.qty}</span><small>Qty</small></div>
+          <div class="ticks">
+            <label class="tick designed">
+              <input type="checkbox" data-kind="designed" ${l.designedAt?"checked":""}>
+              <span class="box">✓</span><small>Designed</small><span class="by">${byText(l.designedBy,l.designedAt)}</span>
+            </label>
+            <label class="tick verified">
+              <input type="checkbox" data-kind="verified" ${l.verifiedAt?"checked":""}>
+              <span class="box">✓</span><small>Verified</small><span class="by">${byText(l.verifiedBy,l.verifiedAt)}</span>
+            </label>
+            <label class="tick issue" data-order="${o.id}" title="Report an issue with this order">
+              <span class="box">⛔</span><small>Issue</small><span class="by"></span>
+            </label>
+          </div>
+        </div>`;
+        block.appendChild(wrap);
+      });
+      if(o.hiddenCount>0){
+        const note=document.createElement("div");
+        note.className="hidden-note";
+        note.textContent=`+ ${o.hiddenCount} non-design item${o.hiddenCount>1?"s":""} in this order (not shown)`;
+        block.appendChild(note);
+      }
+      group.appendChild(block);
+    });
+    queue.appendChild(group);
+  });
+
+  wireQueue();
+  refreshProgress();
+  const first=queue.querySelector(".line:not(.done)")||queue.querySelector(".line");
+  if(first) first.classList.add("focused");
+}
+
+function byText(by, at){
+  if(!at) return "";
+  const t=String(at).slice(11,16); /* HH:MM from DATETIME string */
+  return esc(by||"")+(t?" · "+t:"");
+}
+
+/* ═══════════════ Wiring ═══════════════ */
+let pendingCopy=null;
+
+function wireQueue(){
+  const queue=$("queue");
+
+  queue.querySelectorAll(".plate:not(.empty)").forEach(p=>{
+    p.addEventListener("click", ()=>{
+      const line=p.closest(".line");
+      if(line.dataset.odd && !ackedLines.has(line.dataset.item)){
+        pendingCopy={plate:p, key:line.dataset.item};
+        $("diffMsg").textContent=
+          `You're working through ${line.dataset.groupType}, but this line is a `+
+          `${line.dataset.lineType}. Did you notice it's a different product?`;
+        $("diffOverlay").classList.add("show");
+        return;
+      }
+      doCopy(p);
+    });
+  });
+
+  queue.querySelectorAll(".tick input").forEach(cb=>{
+    cb.addEventListener("change", ()=>{
+      if(!requireUser()){ cb.checked=!cb.checked; return; }
+      const line=cb.closest(".line");
+      const itemId=Number(line.dataset.item);
+      const kind=cb.dataset.kind;
+      const checked=cb.checked;
+      socket.emit("tick", {itemId, kind, checked, user:currentUser}, (res)=>{
+        if(res && res.error){ cb.checked=!checked; toast(res.error, true); return; }
+        const l=orders.flatMap(o=>o.lines).find(x=>x.itemId===itemId);
+        if(l && res.state){
+          l.designedBy=res.state.designed_by; l.designedAt=res.state.designed_at;
+          l.verifiedBy=res.state.verified_by; l.verifiedAt=res.state.verified_at;
+        }
+        updateLineDOM(itemId);
+        refreshProgress();
+        if(checked) focusNext(line);
+      });
+    });
+  });
+
+  queue.querySelectorAll(".tick.issue").forEach(f=>{
+    f.addEventListener("click", ()=>{
+      if(!requireUser()) return;
+      openIssue(f.dataset.order);
+    });
+  });
+}
+
+function updateLineDOM(itemId){
+  const line=document.querySelector(`.line[data-item="${itemId}"]`);
+  const l=orders.flatMap(o=>o.lines).find(x=>x.itemId===itemId);
+  if(!line||!l) return;
+  const dBox=line.querySelector('[data-kind="designed"]');
+  const vBox=line.querySelector('[data-kind="verified"]');
+  dBox.checked=!!l.designedAt;
+  vBox.checked=!!l.verifiedAt;
+  dBox.closest(".tick").querySelector(".by").innerHTML=byText(l.designedBy,l.designedAt);
+  vBox.closest(".tick").querySelector(".by").innerHTML=byText(l.verifiedBy,l.verifiedAt);
+  line.classList.toggle("done", !!l.designedAt && !!l.verifiedAt);
+}
+
+async function doCopy(p){
+  const text=copyTexts[p.dataset.ci]||"";
+  try{ await navigator.clipboard.writeText(text); }catch(e){ toast("Clipboard blocked — check browser permissions", true); }
+  p.classList.add("flash");
+  setTimeout(()=>p.classList.remove("flash"),700);
+}
+$("diffCancel").addEventListener("click", ()=>{ $("diffOverlay").classList.remove("show"); pendingCopy=null; });
+$("diffConfirm").addEventListener("click", ()=>{
+  $("diffOverlay").classList.remove("show");
+  if(pendingCopy){ ackedLines.add(pendingCopy.key); doCopy(pendingCopy.plate); pendingCopy=null; }
+});
+
+/* ═══════════════ Progress + focus ═══════════════ */
+function refreshProgress(){
+  const lines=orders.flatMap(o=>o.lines);
+  const total=lines.length;
+  const designed=lines.filter(l=>l.designedAt).length;
+  const verified=lines.filter(l=>l.verifiedAt).length;
+  const pd=total?Math.round(designed/total*100):0;
+  const pv=total?Math.round(verified/total*100):0;
+  $("barD").style.width=pd+"%"; $("pctD").textContent=pd+"%";
+  $("barV").style.width=pv+"%"; $("pctV").textContent=pv+"%";
+  const btn=$("moveBtn");
+  if(btn){
+    const complete=total>0&&designed===total&&verified===total;
+    btn.disabled=!complete;
+    btn.classList.toggle("ready",complete);
+  }
+}
+
+function focusNext(fromLine){
+  const all=[...document.querySelectorAll(".line")];
+  const idx=all.indexOf(fromLine);
+  const next=all.slice(idx+1).find(l=>!l.classList.contains("done"))
+          ||all.find(l=>!l.classList.contains("done"));
+  all.forEach(l=>l.classList.remove("focused"));
+  if(next){ next.classList.add("focused"); next.scrollIntoView({behavior:"smooth",block:"center"}); }
+}
+
+/* ═══════════════ Move batch ═══════════════ */
+function requestMove(){
+  socket.emit("move_batch",{fromStatus:currentStatus,force:false},(res)=>{
+    if(res.error) return toast(res.error,true);
+    if(res.conflict){
+      $("moveTargetName").textContent=CFG.statuses.target.label;
+      $("moveMsg").textContent=
+        `“${CFG.statuses.target.label}” already contains ${res.conflict} order${res.conflict>1?"s":""}. `+
+        `Moving this batch will combine them into one batch.`;
+      $("moveOverlay").classList.add("show");
+      return;
+    }
+    toast(`${res.moved} order${res.moved!==1?"s":""} moved to ${CFG.statuses.target.label}`);
+  });
+}
+$("moveCancel").addEventListener("click",()=>$("moveOverlay").classList.remove("show"));
+$("moveConfirm").addEventListener("click",()=>{
+  $("moveOverlay").classList.remove("show");
+  socket.emit("move_batch",{fromStatus:currentStatus,force:true},(res)=>{
+    if(res.error) return toast(res.error,true);
+    toast(`${res.moved} order${res.moved!==1?"s":""} moved to ${CFG.statuses.target.label}`);
+  });
+});
+
+/* ═══════════════ Issues ═══════════════ */
+let issueOrderId=null;
+function openIssue(orderId){
+  issueOrderId=orderId;
+  $("issueOrderLabel").textContent=
+    `Order #${orderId} — this will create a HelpScout ticket and move the order to `+
+    `${CFG.statuses.issue.label}, removing it from the queue on all screens.`;
+  $("issueNotes").value="";
+  $("issueOverlay").classList.add("show");
+  $("issueNotes").focus();
+}
+$("issueCancel").addEventListener("click",()=>$("issueOverlay").classList.remove("show"));
+$("issueSubmit").addEventListener("click",()=>{
+  const notes=$("issueNotes").value.trim();
+  if(!notes){ $("issueNotes").focus(); return; }
+  $("issueSubmit").disabled=true;
+  socket.emit("report_issue",{orderId:issueOrderId,notes,user:currentUser},(res)=>{
+    $("issueSubmit").disabled=false;
+    if(res.error) return toast(res.error,true);
+    $("issueOverlay").classList.remove("show");
+    toast(`Ticket created for #${issueOrderId} — moved to ${CFG.statuses.issue.label}`);
+  });
+});
+
+/* ═══════════════ Toast ═══════════════ */
+let toastTimer=null;
+function toast(msg,isErr){
+  const t=$("toast");
+  t.textContent=(isErr?"✕ ":"✓ ")+msg;
+  t.classList.toggle("err",!!isErr);
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>t.classList.remove("show"),3000);
+}
+</script>
+</body>
+</html>
