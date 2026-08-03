@@ -61,18 +61,40 @@ Notes:
 
 ## 2. App setup
 
+Code lives in git — `EngravingStudios/engraving-design-queue` (private),
+same pattern as `engraving-automation`/`engraving-orders`: a dedicated
+deploy key per repo, wired up via an SSH host alias in `~/.ssh/config`.
+
+```
+Host github-design-queue
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/deploy_engraving_design_queue
+  IdentitiesOnly yes
+```
+
+On a fresh box, clone it in:
+
+```bash
+cd /var/www            # or wherever your apps live
+git clone github-design-queue:EngravingStudios/engraving-design-queue.git design-queue
+cd design-queue
+```
+
+On this droplet it's already cloned at `/var/www/design-queue` — pull
+future updates with `git pull` from that directory instead of
+re-cloning. `node_modules/`, `config.json`, and `data/` are gitignored
+(local/instance-specific, never committed).
+
 Every secret this app needs — the design_app DB password, the shared
 staff login's bcrypt hash, and the session-signing secret — lives in
 the central `/etc/orders-app/config.php`, not in this app's own
 `config.json`. This mirrors the existing `db_automation` block already
 in that file (one block per app's DB user), extended to cover the
 app's local secrets too, so nothing credential-shaped sits in this
-app's own folder.
+app's own folder or its git history.
 
 ```bash
-cd /var/www            # or wherever your apps live
-# copy the design-queue folder here, then:
-cd design-queue
 npm install
 mkdir -p data           # holds ticks.json + product-colours.json —
                          # working state only, safe to wipe if ever needed
