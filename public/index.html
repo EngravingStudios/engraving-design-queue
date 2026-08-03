@@ -637,7 +637,23 @@ function focusNext(fromLine){
   const next=all.slice(idx+1).find(l=>!l.classList.contains("done"))
           ||all.find(l=>!l.classList.contains("done"));
   all.forEach(l=>l.classList.remove("focused"));
-  if(next){ next.classList.add("focused"); next.scrollIntoView({behavior:"smooth",block:"center"}); }
+  if(next){ next.classList.add("focused"); scrollToTop(next); }
+}
+
+/* Puts the focused line at the top of the view instead of the centre
+   — with a long queue, centring still leaves earlier lines visible
+   above it, which is exactly the clutter this is meant to avoid.
+   Can't just use scrollIntoView block:"start": there are two stacked
+   sticky layers (the main header, then each group's heading right
+   below it) that a plain scrollIntoView doesn't know to leave room
+   for, so the line would land tucked behind them. Measure both and
+   land just under them instead. */
+function scrollToTop(line){
+  const header=document.querySelector("header");
+  const heading=line.closest(".group")?.querySelector(".type-break");
+  const offset=(header?header.offsetHeight:0)+(heading?heading.offsetHeight:0)+10;
+  const top=line.getBoundingClientRect().top+window.scrollY-offset;
+  window.scrollTo({top,behavior:"smooth"});
 }
 
 /* ═══════════════ Move batch ═══════════════ */

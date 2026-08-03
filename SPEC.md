@@ -244,7 +244,15 @@ DB round-trip it replaced).
 
 Focus-advance: after any tick, auto-scroll to the next un-done line
 (same order-of-appearance as rendered) so designers can work down a
-batch without manual scrolling.
+batch without manual scrolling. Scrolls it to the **top** of the view,
+not centred — centring still left earlier lines visible above the
+focused one, cluttering the view exactly when you're trying to work
+through a long batch. Can't just use `scrollIntoView({block:"start"})`:
+there are two stacked sticky layers (the main header, then each
+group's `.type-break` heading right below it) that scrollIntoView
+doesn't know to leave room for, so the line would land tucked behind
+them. Both are measured live and the scroll target lands just under
+them instead.
 
 ## 7a. Audit trail — one-way comment on tick-ON (separate from §7)
 
