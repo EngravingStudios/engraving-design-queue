@@ -278,12 +278,21 @@ instantly."
 On submit: **create HelpScout ticket FIRST** (mailbox ID from central
 config, includes order link, staff name, notes, and every line's
 product/qty/front/back for context) — **only if ticket creation
-succeeds**, then `UPDATE orders SET status='pending'`. If the ticket
-API fails, the order must NOT move — never leave an order silently
-parked in Pending with no ticket behind it. Broadcast the removal via
+succeeds**, then `UPDATE orders SET status='pending'`, then write a
+one-way audit breadcrumb to `notes` — same mechanism and reasoning as
+the tick audit trail (§7a): `"Design Queue: {user} raised an issue at
+the design stage — "{notes}""`, via `lib/audit.js`. If the ticket API
+fails, the order must NOT move — never leave an order silently parked
+in Pending with no ticket behind it. Broadcast the removal via
 Socket.IO so it vanishes from every screen immediately (this falls
 out naturally from status-filtered queries — no special-case code
 needed beyond re-querying/broadcasting).
+
+Unlike the tick audit write (which is fire-and-forget, off the
+critical path — see §7a), this one is awaited: issue-raising isn't a
+high-frequency action the way ticking is, there's no Socket.IO
+broadcast latency to protect, and reliability of the paper trail
+matters more here than shaving a DB round-trip.
 
 ## 10. Unmapped product reporting
 
