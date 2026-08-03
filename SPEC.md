@@ -104,6 +104,22 @@ confirmed explicitly, do not simplify):
    matters, not the word count of a phone number)
 3. Only one side populated (single-sided item)
 
+**Real bug this needed fixing for**: a bare phone number has no
+internal spaces, so it always counts as "1 word" — even an 11-digit
+one. That's fine when the OTHER side is genuinely short too (a
+single-word name front, e.g. "ARLO" — correctly tier 2, per the
+example above). But when the other side is a full multi-word address
+(e.g. a name + house number + street + postcode, several words), the
+whole item was still getting dragged into tier 2 purely because the
+phone-number side's word count is mechanically 1 — even though the
+front is clearly substantial, tier-1-shaped content. Fix: a side whose
+text is purely digits (≥6 characters, spaces stripped) is treated as
+satisfying the "more than 1 word" check regardless of its literal word
+count — a phone number's *length* is what makes it non-trivial, not
+its whitespace-delimited word count. A genuinely short side (like a
+bare first name) still isn't exempted, since it doesn't match that
+digits-only pattern.
+
 Within each tier: **quantity descending**.
 
 **Multi-line orders**: an order with >1 designable line gets a dashed

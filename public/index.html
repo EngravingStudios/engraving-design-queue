@@ -308,11 +308,19 @@ async function loadQueue() {
   renderQueue();
 }
 
-/* ═══════════════ Sort tiers & similarity (unchanged logic) ═══════════════ */
+/* ═══════════════ Sort tiers & similarity ═══════════════ */
 function words(s){ return s ? s.trim().split(/\s+/).filter(Boolean).length : 0; }
+/* A bare phone number has no spaces, so words() always counts it as
+   "1 word" — that shouldn't by itself veto tier 1 the way a
+   genuinely short side (e.g. a first-name-only front) should. */
+function isPhoneLike(s){ return /^\d{6,}$/.test((s||"").replace(/\s+/g,"")); }
 function sortRank(l){
-  const f = words(l.front), b = words(l.back);
-  if (f > 0 && b > 0) return (f > 1 && b > 1) ? 1 : 2;
+  const fWords = words(l.front), bWords = words(l.back);
+  if (fWords > 0 && bWords > 0) {
+    const fOK = fWords > 1 || isPhoneLike(l.front);
+    const bOK = bWords > 1 || isPhoneLike(l.back);
+    return (fOK && bOK) ? 1 : 2;
+  }
   return 3;
 }
 function levenshtein(a, b){
