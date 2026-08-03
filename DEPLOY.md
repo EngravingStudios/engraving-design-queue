@@ -31,7 +31,7 @@ CREATE USER 'design_app'@'%' IDENTIFIED BY 'CHOOSE_A_STRONG_PASSWORD';
 
 GRANT SELECT (id, status)     ON fulfilment.orders   TO 'design_app'@'%';
 GRANT UPDATE (status)         ON fulfilment.orders   TO 'design_app'@'%';
-GRANT SELECT (id, order_id)   ON fulfilment.items    TO 'design_app'@'%';
+GRANT SELECT                  ON fulfilment.items    TO 'design_app'@'%';
 GRANT SELECT                  ON fulfilment.products TO 'design_app'@'%';
 GRANT SELECT                  ON fulfilment.sanitise TO 'design_app'@'%';
 GRANT INSERT                  ON fulfilment.notes    TO 'design_app'@'%';
