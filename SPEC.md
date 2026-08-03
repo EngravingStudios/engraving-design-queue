@@ -126,9 +126,23 @@ qty across all lines in that product's section), not line count.
 
 ## 5. Similarity detection (within an order only)
 
-For items on the SAME order, compute similarity of front+back combined
-text via Levenshtein ratio (`1 - distance/maxLength`). Threshold
-**0.65**, tunable.
+For items on the SAME order, compute similarity via Levenshtein ratio
+(`1 - distance/maxLength`), comparing **front-vs-front and
+back-vs-back independently** and taking whichever side scores higher.
+Threshold **0.65**, tunable.
+
+**Real bug this was fixed from**: the first version concatenated
+front+back into one string before comparing (`combinedText()`). That
+dilutes the signal whenever one side is near-identical but the other
+is completely different — e.g. two siblings' pet tags, same
+owner/address/phone on the front (only the pet's name differs), but
+totally different medical-note text on the back. The huge back-text
+edit distance dragged the *combined* ratio well below 0.65 even though
+the front alone was a ~95% match — exactly the "did you grab the wrong
+tag" case this feature exists to catch (see the 27mm/21mm motivating
+example below). Comparing the two sides independently and taking the
+max fixes it: a near-identical front now triggers the warning
+regardless of how different the back is, and vice versa.
 
 - **Identical** → no warning (genuinely the same design).
 - **Similar but NOT identical** (≥0.65, <1.0) → red banner: "⚠

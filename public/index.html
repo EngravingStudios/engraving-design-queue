@@ -437,7 +437,15 @@ function renderQueue(){
         o.lines.forEach((c,j)=>{
           if(i===j) return;
           const B=combinedText(c); if(!B||A===B) return;
-          const r=simRatio(A,B);
+          /* Compare front-vs-front and back-vs-back independently,
+             not the combined blob — a near-identical front (e.g. two
+             siblings' tags, same owner/address, different pet name)
+             can score well below threshold on combined text once a
+             completely different back is concatenated in, diluting
+             exactly the signal this feature exists to catch. */
+          const fr=(l.front&&c.front)?simRatio(l.front,c.front):0;
+          const bk=(l.back&&c.back)?simRatio(l.back,c.back):0;
+          const r=Math.max(fr,bk);
           if(r>=SIM_THRESHOLD&&(!(i in sims)||r>sims[i].r)) sims[i]={j,r};
         });
       });
