@@ -381,7 +381,7 @@ function renderTabs(){
     const btn=document.createElement("button");
     btn.className="move-btn"; btn.id="moveBtn"; btn.disabled=true;
     btn.textContent=`Move ${label} → ${CFG.statuses.target.label}`;
-    btn.addEventListener("click", requestMove);
+    btn.addEventListener("click", ()=>{ if(requireUser()) requestMove(); });
     tabsEl.appendChild(btn);
   }
 }
@@ -618,7 +618,7 @@ function focusNext(fromLine){
 
 /* ═══════════════ Move batch ═══════════════ */
 function requestMove(){
-  socket.emit("move_batch",{fromStatus:currentStatus,force:false},(res)=>{
+  socket.emit("move_batch",{fromStatus:currentStatus,force:false,user:currentUser},(res)=>{
     if(res.error) return toast(res.error,true);
     if(res.conflict){
       $("moveTargetName").textContent=CFG.statuses.target.label;
@@ -634,7 +634,7 @@ function requestMove(){
 $("moveCancel").addEventListener("click",()=>$("moveOverlay").classList.remove("show"));
 $("moveConfirm").addEventListener("click",()=>{
   $("moveOverlay").classList.remove("show");
-  socket.emit("move_batch",{fromStatus:currentStatus,force:true},(res)=>{
+  socket.emit("move_batch",{fromStatus:currentStatus,force:true,user:currentUser},(res)=>{
     if(res.error) return toast(res.error,true);
     toast(`${res.moved} order${res.moved!==1?"s":""} moved to ${CFG.statuses.target.label}`);
   });

@@ -251,7 +251,9 @@ existing status, never assigns initial batching.
 
 **Move button**: appears per-batch-tab, disabled/grey until every
 visible line in that batch is BOTH designed AND verified, then turns
-green. On click:
+green. Requires a "Working as" name selected first, same as ticking
+and raising an issue — block with a toast if not (needed for the
+audit breadcrumb below). On click:
 - Server-side check (in a locked transaction, `SELECT ... FOR UPDATE`)
   whether Label Hold already has orders — **never trust a client's
   cached view of the target**, always re-check at move time.
@@ -266,6 +268,15 @@ green. On click:
   be stranded in a batch.
 - Volume note: expect up to ~100 orders in any given status at a
   time — moves are infrequent, no special performance concern.
+- **Audit breadcrumb, one per order**: same mechanism as §7a/§9 —
+  after the move transaction commits, `lib/audit.js` writes
+  `"Design Queue: Order #{id} moved to {targetLabel} by {user}"` to
+  `notes` for every order that moved (the order IDs are captured via
+  `SELECT ... FOR UPDATE` inside the same transaction that performs
+  the move, not re-derived from the `UPDATE`'s affected-row count, so
+  the breadcrumb always matches exactly which orders moved). Awaited
+  before the response returns, not fire-and-forget — same reasoning
+  as §9: moves are infrequent, not a latency-sensitive path.
 
 ## 9. Issue flag → HelpScout → Pending
 

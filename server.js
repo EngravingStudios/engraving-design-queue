@@ -138,11 +138,13 @@ io.on("connection", (socket) => {
   /* Move a batch to Label Hold. Server-side empty check is authoritative. */
   socket.on("move_batch", async (payload, cb) => {
     try {
-      const { fromStatus, force } = payload || {};
+      const { fromStatus, force, user } = payload || {};
       const validFrom = config.statuses.batches.map((b) => b.value);
       if (!validFrom.includes(fromStatus))
         return cb && cb({ error: "unknown batch" });
-      const result = await queue.moveBatch(fromStatus, !!force);
+      if (!config.staff.includes(user))
+        return cb && cb({ error: "unknown user" });
+      const result = await queue.moveBatch(fromStatus, !!force, user);
       if (result.conflict && !force) return cb && cb(result);
       io.emit("orders_changed", { reason: "move", fromStatus });
       cb && cb(result);
