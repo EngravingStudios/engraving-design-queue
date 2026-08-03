@@ -524,6 +524,17 @@ column-level grants, not table-level, on `orders`.
 - No fixed/capped colour palette (rejected, replaced with unbounded
   hash-to-hue).
 - No robots.txt disclosure of the private path.
+- **No live-refresh/polling for changes made on the fulfilment side**
+  (e.g. a customer cancelling, or editing engraving text, while the
+  order is already showing in the queue). Considered and rejected:
+  business policy is that once an order is in any print batch (1–4)
+  or beyond, it's deemed already-made — customers can't cancel or
+  change it from that point on. That eliminates the staleness risk
+  this app would otherwise need to solve (the queue only re-fetches
+  from the DB on local events — a batch move, an issue raised, tab
+  switch, or socket reconnect per §11 — never on a timer), without
+  needing polling or push infrastructure. If that policy ever
+  changes, this assumption needs revisiting.
 
 ---
 
