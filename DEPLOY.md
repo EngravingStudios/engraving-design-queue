@@ -169,7 +169,7 @@ pm2 save
 ```nginx
 allow 212.139.46.161;  # Workshop fixed IP
 allow 217.146.82.84;   # Surfshark VPN static
-allow 90.246.27.41;    # Andy home (update as needed)
+allow 80.177.191.116;  # Andy home (update as needed)
 deny all;
 ```
 
