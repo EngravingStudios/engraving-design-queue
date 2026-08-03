@@ -151,6 +151,16 @@ wrapping visually AND leaked into clipboard output. Fix: wrap plate
 text in a single inner `<span>` so `<br>`/`<mark>` flow correctly
 inside the flex container, and always copy from source data.)
 
+**Second real bug, cross-browser**: the source registry (and every
+other use of the text — sort, diff, similarity) uses plain `\n` line
+breaks. Chrome auto-converts `\n` to `\r\n` when writing plain text to
+the system clipboard; Firefox writes it verbatim. EngraveLab's paste
+target only recognises `\r\n` as a line break, so Firefox pastes were
+silently losing line spacing while Chrome looked fine. Fix: normalise
+`\n` → `\r\n` at the point of writing to the clipboard only (in
+`doCopy()`), never in the source registry itself — sort/diff/similarity
+must keep operating on plain `\n`.
+
 ## 6. Different-product-in-mixed-order warning
 
 Two SEPARATE signals, don't conflate them:
@@ -277,6 +287,15 @@ audit breadcrumb below). On click:
   the breadcrumb always matches exactly which orders moved). Awaited
   before the response returns, not fire-and-forget — same reasoning
   as §9: moves are infrequent, not a latency-sensitive path.
+- **Loading state while waiting on the response**: because the audit
+  breadcrumb writes above are awaited before the server responds, a
+  large batch (up to ~100 orders, per the volume note) can take a
+  visible moment. Without a loading indicator this looked like nothing
+  was happening — the move was working, just invisibly. Button shows
+  a spinner + "Moving…" and disables itself the instant it's clicked;
+  on success it's naturally rebuilt fresh once the server's own
+  `orders_changed` broadcast triggers a re-render (no manual reset
+  needed), on error/conflict it resets immediately.
 
 ## 9. Issue flag → HelpScout → Pending
 
@@ -362,6 +381,12 @@ acceptable trade.
   `design_queue.session_secret`), referenced via `@shared:` like every
   other secret this app uses — see §13. Session cookie, ~30-day
   expiry (tablets stay logged in).
+- **Session store is file-backed** (`session-file-store`, writing into
+  `data/sessions/` alongside `ticks.json`), not express-session's
+  default in-memory store. This was found the hard way: the in-memory
+  store is wiped on every process restart (deploys, crashes, reboots),
+  which silently logged out every tablet regardless of the 30-day
+  cookie — a routine `pm2 restart` shouldn't force a re-login.
 - Both layers independently required — belt and braces was explicitly
   requested, not either/or.
 - `X-Robots-Tag: noindex, nofollow` header on the Nginx location

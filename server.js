@@ -4,6 +4,7 @@ const path = require("path");
 const http = require("http");
 const express = require("express");
 const session = require("express-session");
+const FileStore = require("session-file-store")(session);
 const bcrypt = require("bcryptjs");
 const { Server } = require("socket.io");
 
@@ -30,6 +31,11 @@ app.set("trust proxy", 1); // behind Nginx
 app.use(express.json());
 
 const sessionMiddleware = session({
+  // Default express-session store is in-memory — wiped on every
+  // restart (deploys, crashes, reboots), silently logging out every
+  // tablet regardless of the 30-day cookie below. File-backed so
+  // sessions actually survive routine restarts.
+  store: new FileStore({ path: path.join(DATA_DIR, "sessions"), logFn: () => {} }),
   name: "design.sid",
   secret: config.auth.sessionSecret,
   resave: false,

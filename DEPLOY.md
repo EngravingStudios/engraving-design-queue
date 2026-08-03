@@ -96,8 +96,10 @@ app's own folder or its git history.
 
 ```bash
 npm install
-mkdir -p data           # holds ticks.json + product-colours.json —
-                         # working state only, safe to wipe if ever needed
+mkdir -p data           # holds ticks.json, product-colours.json, and
+                         # sessions/ (login sessions — file-backed so
+                         # restarts don't log everyone out) — working
+                         # state only, safe to wipe if ever needed
 cp config.example.json config.json
 ```
 
@@ -241,6 +243,12 @@ without advertising the path.
 - Tick data lives in `data/ticks.json`. It expires on its own after 3
   days — nothing to maintain. Safe to delete the file if you ever want
   to clear all current ticks (e.g. testing); the app recreates it.
+- Login sessions live in `data/sessions/` (file-backed, survives
+  `pm2 restart design-queue` — see SPEC.md §12). If someone reports
+  being stuck disconnected/unable to log in right after a restart on a
+  browser that was open from *before* this fix was deployed, it's a
+  stale cookie from the old in-memory store — clear cookies for the
+  site and log back in. Shouldn't recur going forward.
 - Home IP changed: edit the allowlist snippet, `nginx -s reload`.
 - Logs: `pm2 logs design-queue`. Issue-ticket failures appear here —
   if HelpScout is down, the order is NOT moved to pending (deliberate:

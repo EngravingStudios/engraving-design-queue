@@ -50,6 +50,9 @@
   .move-btn:disabled{cursor:not-allowed}
   .move-btn.ready{background:var(--green);border-color:var(--green);color:#12271b;box-shadow:0 0 14px rgba(79,195,126,.45)}
   .move-btn.ready:hover{filter:brightness(1.1)}
+  .move-btn.loading{cursor:wait;background:#20252b;border-color:var(--panel-edge);color:var(--ink-dim);box-shadow:none;padding-left:34px;position:relative}
+  .move-btn.loading::before{content:"";position:absolute;left:12px;top:50%;width:14px;height:14px;margin-top:-7px;border:2px solid rgba(255,255,255,.2);border-top-color:var(--brass);border-radius:50%;animation:spin .7s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
 
   main{max-width:1240px;margin:18px auto;padding:0 18px}
   .empty-batch{text-align:center;color:var(--ink-dim);font-size:14px;padding:60px 20px;border:1px dashed var(--panel-edge);border-radius:10px;margin-top:10px}
@@ -579,7 +582,12 @@ function updateLineDOM(itemId){
 
 async function doCopy(p){
   const text=copyTexts[p.dataset.ci]||"";
-  try{ await navigator.clipboard.writeText(text); }catch(e){ toast("Clipboard blocked — check browser permissions", true); }
+  /* Chrome auto-converts \n to \r\n when writing plain text to the
+     system clipboard; Firefox writes it verbatim. Some paste targets
+     only treat \r\n as a line break, so normalise here — the source
+     registry itself stays \n (used for sort/diff/similarity). */
+  const clip=text.replace(/\n/g,"\r\n");
+  try{ await navigator.clipboard.writeText(clip); }catch(e){ toast("Clipboard blocked — check browser permissions", true); }
   p.classList.add("flash");
   setTimeout(()=>p.classList.remove("flash"),700);
 }
@@ -617,10 +625,30 @@ function focusNext(fromLine){
 }
 
 /* ═══════════════ Move batch ═══════════════ */
+/* The server now also writes one audit note per moved order (awaited
+   before it responds — see lib/queue.js), so a big batch can take a
+   visible moment. Without this, the move was happening but looked
+   like nothing was — the button just sat there until the response. */
+function setMoveLoading(loading){
+  const btn=$("moveBtn");
+  if(!btn) return;
+  if(loading){
+    btn.dataset.origText=btn.textContent;
+    btn.textContent="Moving…";
+    btn.disabled=true;
+    btn.classList.remove("ready");
+    btn.classList.add("loading");
+  }else{
+    btn.classList.remove("loading");
+    if(btn.dataset.origText) btn.textContent=btn.dataset.origText;
+  }
+}
 function requestMove(){
+  setMoveLoading(true);
   socket.emit("move_batch",{fromStatus:currentStatus,force:false,user:currentUser},(res)=>{
-    if(res.error) return toast(res.error,true);
+    if(res.error){ setMoveLoading(false); return toast(res.error,true); }
     if(res.conflict){
+      setMoveLoading(false);
       $("moveTargetName").textContent=CFG.statuses.target.label;
       $("moveMsg").textContent=
         `“${CFG.statuses.target.label}” already contains ${res.conflict} order${res.conflict>1?"s":""}. `+
@@ -628,14 +656,18 @@ function requestMove(){
       $("moveOverlay").classList.add("show");
       return;
     }
+    // success: the server's own orders_changed broadcast (which this
+    // client also receives) triggers loadQueue()->renderTabs(),
+    // rebuilding the button fresh — no manual reset needed here.
     toast(`${res.moved} order${res.moved!==1?"s":""} moved to ${CFG.statuses.target.label}`);
   });
 }
 $("moveCancel").addEventListener("click",()=>$("moveOverlay").classList.remove("show"));
 $("moveConfirm").addEventListener("click",()=>{
   $("moveOverlay").classList.remove("show");
+  setMoveLoading(true);
   socket.emit("move_batch",{fromStatus:currentStatus,force:true,user:currentUser},(res)=>{
-    if(res.error) return toast(res.error,true);
+    if(res.error){ setMoveLoading(false); return toast(res.error,true); }
     toast(`${res.moved} order${res.moved!==1?"s":""} moved to ${CFG.statuses.target.label}`);
   });
 });
