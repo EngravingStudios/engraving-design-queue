@@ -124,26 +124,30 @@ lines needs separate handling.
 `sanitise` table rows** — each needs logic a `find`/`replace` row can't express:
 
 - **UK postcode reformatting** (`lib/sanitise.js`'s `fixPostcodes()`): customers often
-  paste postcodes run together (`TS182NH`) or spaced wrong. A regex finds anything shaped
+  paste postcodes run together (`ts182nh`) or spaced wrong. A regex finds anything shaped
   like a UK postcode — outward code (1-2 letters, a digit, optionally one more
   letter/digit — covers A9, A99, A9A, AA9, AA99, AA9A) then inward code (always digit + 2
-  letters) — strips whatever whitespace (if any) sits between them, and reinserts exactly
-  one space: `TS182NH`→`TS18 2NH`, `E15PW`→`E1 5PW` (outward `E1`, not `E15` — the inward
-  code must be digit+2-letters, so backtracking correctly finds the `E1`/`5PW` split),
-  `E125PW`→`E12 5PW`. Not a DB rule because every postcode is a different string — the fix
-  is "insert a space at the right position," not a fixed string pair. Deliberately just a
-  shape-based heuristic (not full Royal Mail validation) — reformats anything
-  postcode-shaped, doesn't attempt to verify the postcode is real.
-- **`im` → `I'm`** (`fixImContraction()`): customers often skip the apostrophe/capital on
-  "I'm" (`im bobbie`). Matched word-boundary-only (`\bim\b`) so it can't fire inside
-  `simple`/`trim`/`swim`/`victim`/names like `Kim`/`Tim` — confirmed by test. **Not** done
-  via a DB word rule despite the `\b` fix above making that safe now, because the
-  replacement needs to be **grammatically fixed-case** ("I'm", capital I, always) rather
-  than case-mirrored: `matchCase()`'s mirror-the-customer's-casing convention is correct
-  for spelling fixes (`speyed`→`spayed` preserves whatever casing was typed) but wrong
-  here — an all-lowercase `im` would mirror to `i'm`, which is still wrong, since "I" is
-  capitalised in English regardless of how the customer typed it. Idempotent — already
-  correct `I'm` has no bare `im` substring left to match.
+  letters) — uppercases both parts and strips whatever whitespace (if any) sits between
+  them, reinserting exactly one space: `ts182nh`→`TS18 2NH`, `e15pw`→`E1 5PW` (outward
+  `E1`, not `E15` — the inward code must be digit+2-letters, so backtracking correctly
+  finds the `E1`/`5PW` split), `E125PW`→`E12 5PW`. The uppercasing is deliberately
+  **fixed-case, not mirrored** — postcodes are always shown in capitals regardless of how
+  the customer typed them, unlike the word rules below. Not a DB rule because every
+  postcode is a different string — the fix is "insert a space at the right position," not
+  a fixed string pair. Deliberately just a shape-based heuristic (not full Royal Mail
+  validation) — reformats anything postcode-shaped, doesn't attempt to verify the postcode
+  is real.
+- **`im` → `I'm`** (`fixImContraction()`): customers often skip the apostrophe on "I'm"
+  (`im bobbie`). Matched word-boundary-only (`\bim\b`) so it can't fire inside
+  `simple`/`trim`/`swim`/`victim`/names like `Kim`/`Tim` — confirmed by test. Casing is
+  **mirrored** via the same `matchCase()` every other word rule uses — `im`→`i'm`,
+  `Im`→`I'm`, `IM`→`I'M` — confirmed 2026-08-04 as the wanted behaviour (an earlier version
+  force-capitalised the `I` always on grammatical grounds; that was explicitly overridden
+  — casing should track the source text exactly like `speyed`→`spayed` does, not apply a
+  grammar rule on top). Kept as a built-in rather than a `sanitise` table row even though
+  the `\b` fix above would now make a DB row safe, because this app's DB user has no
+  `INSERT`/`UPDATE` grant on `sanitise` (SELECT only) — a built-in guarantees it's always
+  on without needing a separate admin path into that table.
 
 Both run after the DB rule pass, before the final trim.
 
