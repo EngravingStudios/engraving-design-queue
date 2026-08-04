@@ -105,16 +105,47 @@ sort-tier word counts, and similarity comparison. Read-time transform only — d
 are never modified.
 
 Two rule types, auto-detected:
-- **Word rules** (purely alphabetic `find`): match **case-insensitively**, replacement
-  **mirrors the customer's typed casing** (`speyed`→`spayed`, `Speyed`→`Spayed`,
-  `SPEYED`→`SPAYED`). This was an explicit design decision — do not make word rules
-  case-sensitive.
+- **Word rules** (purely alphabetic `find`): match **case-insensitively AND on word
+  boundaries (`\b...\b`)**, replacement **mirrors the customer's typed casing**
+  (`speyed`→`spayed`, `Speyed`→`Spayed`, `SPEYED`→`SPAYED`). This was an explicit design
+  decision — do not make word rules case-sensitive. The `\b` boundaries were added
+  2026-08-04 (see the `im`→`I'm` fix below) — without them a short `find` like `im` would
+  also fire inside `simple`/`trim`/`swim`, silently corrupting unrelated words. Existing
+  rules (`speyed`, `microchiped`, ...) are unaffected since they were already meant to
+  match whole words.
 - **Literal rules** (symbols/entities): exact literal replace, casing is meaningless here.
 
 Applied in `id` order from the table. Normalise `\r\n`/`\r` → `\n` first. Empty string or
 literal `"NULL"` after trim → treat as null. This is a single whole-string `.trim()`, not a
 per-line trim — see the clipboard-copy note in §7 for why trailing whitespace on internal
 lines needs separate handling.
+
+**Two built-in fixes on top of the DB rules (added 2026-08-04), applied in code, not as
+`sanitise` table rows** — each needs logic a `find`/`replace` row can't express:
+
+- **UK postcode reformatting** (`lib/sanitise.js`'s `fixPostcodes()`): customers often
+  paste postcodes run together (`TS182NH`) or spaced wrong. A regex finds anything shaped
+  like a UK postcode — outward code (1-2 letters, a digit, optionally one more
+  letter/digit — covers A9, A99, A9A, AA9, AA99, AA9A) then inward code (always digit + 2
+  letters) — strips whatever whitespace (if any) sits between them, and reinserts exactly
+  one space: `TS182NH`→`TS18 2NH`, `E15PW`→`E1 5PW` (outward `E1`, not `E15` — the inward
+  code must be digit+2-letters, so backtracking correctly finds the `E1`/`5PW` split),
+  `E125PW`→`E12 5PW`. Not a DB rule because every postcode is a different string — the fix
+  is "insert a space at the right position," not a fixed string pair. Deliberately just a
+  shape-based heuristic (not full Royal Mail validation) — reformats anything
+  postcode-shaped, doesn't attempt to verify the postcode is real.
+- **`im` → `I'm`** (`fixImContraction()`): customers often skip the apostrophe/capital on
+  "I'm" (`im bobbie`). Matched word-boundary-only (`\bim\b`) so it can't fire inside
+  `simple`/`trim`/`swim`/`victim`/names like `Kim`/`Tim` — confirmed by test. **Not** done
+  via a DB word rule despite the `\b` fix above making that safe now, because the
+  replacement needs to be **grammatically fixed-case** ("I'm", capital I, always) rather
+  than case-mirrored: `matchCase()`'s mirror-the-customer's-casing convention is correct
+  for spelling fixes (`speyed`→`spayed` preserves whatever casing was typed) but wrong
+  here — an all-lowercase `im` would mirror to `i'm`, which is still wrong, since "I" is
+  capitalised in English regardless of how the customer typed it. Idempotent — already
+  correct `I'm` has no bare `im` substring left to match.
+
+Both run after the DB rule pass, before the final trim.
 
 ### 4. Grouping, sorting, colours
 **Product colour: full hue-wheel hash of `product_id`** (NOT a fixed palette — an earlier
