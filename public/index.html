@@ -354,6 +354,19 @@ function levenshtein(a, b){
 const SIM_THRESHOLD = 0.65;
 function simRatio(a,b){ const L=Math.max(a.length,b.length); return L?1-levenshtein(a,b)/L:0; }
 function combinedText(l){ return ((l.front||"")+"\n"+(l.back||"")).trim(); }
+/* Decides whether a side is worth word-diff-highlighting once the
+   OTHER side has already triggered the similarity banner. A side that
+   cleared SIM_THRESHOLD is obviously worth it. A side that didn't but
+   is short (e.g. a single differing pet name, "MONTY" vs "WINSTON")
+   is *also* worth it — a low Levenshtein ratio on a one-word field
+   just means "totally different word", and marking that whole word is
+   the useful signal, not noise. Only a longer side that's genuinely
+   unrelated (e.g. two completely different medical notes) stays
+   suppressed, per the original "don't light up almost everything" fix. */
+function diffWorthy(a,b,ratio){
+  if(!a||!b||a===b) return false;
+  return ratio>=SIM_THRESHOLD || (words(a)<=3 && words(b)<=3);
+}
 function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function attrEsc(s){ return esc(s).replace(/"/g,"&quot;"); }
 function diffHTML(text, other){
@@ -470,15 +483,8 @@ function renderQueue(){
           const fr=(l.front&&c.front)?simRatio(l.front,c.front):0;
           const bk=(l.back&&c.back)?simRatio(l.back,c.back):0;
           const r=Math.max(fr,bk);
-          /* Track which side(s) actually matched, not just whether
-             the line matched at all — otherwise a front-only match
-             (e.g. near-identical owner/address, unrelated back text)
-             gets the back word-diffed against a completely different
-             sentence too, lighting up almost every word for no
-             reason. Only diff-highlight the side(s) that are
-             genuinely similar; render the other side plainly. */
           if(r>=SIM_THRESHOLD&&(!(i in sims)||r>sims[i].r))
-            sims[i]={j,r,front:fr>=SIM_THRESHOLD,back:bk>=SIM_THRESHOLD};
+            sims[i]={j,r,front:diffWorthy(l.front,c.front,fr),back:diffWorthy(l.back,c.back,bk)};
         });
       });
 

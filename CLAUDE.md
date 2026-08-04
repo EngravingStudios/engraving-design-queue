@@ -227,6 +227,23 @@ the "whole field highlighted" outcome this feature is meant to avoid. Fix: track
 side(s) actually hit the threshold (front, back, or both) and only diff-highlight those — a
 side that didn't match renders plainly, with no highlighting at all.
 
+**Fifth real bug (fixed 2026-08-04)**: the second fix above was too strict — gating
+highlighting purely on the 0.65 Levenshtein threshold also suppressed the side that
+*didn't* trigger the match even when it was short and genuinely differed, e.g. two lines
+with an identical multi-line front but different single-word back (`MONTY` vs `WINSTON`,
+same order, front matches so the banner correctly fires). A one-word field's Levenshtein
+ratio against a completely different one-word field is low (two totally different words
+share few characters), so it fell below threshold and got suppressed — same as the
+unrelated-medical-notes case above — leaving the banner saying "differences highlighted"
+with nothing actually highlighted anywhere, since the matching side (front) had nothing to
+highlight either (it was identical). Fix: `diffWorthy(a,b,ratio)` in `public/index.html`
+— a side is worth diff-highlighting if it cleared the threshold (unchanged) **or** if both
+texts are short (≤3 words) and not literally equal. For a short field, the whole thing
+lighting up in `<mark>` *is* the useful signal ("this one word changed"), unlike a long
+field where a low ratio really does mean "unrelated content" and marking nearly everything
+is noise — that distinction, not a flat threshold, is what the suppression was meant to
+capture.
+
 **Deliberately scoped to within-order only** — cross-order similarity (two different
 customers, similar tags) was explicitly rejected as noise that would train staff to ignore
 the warning.
