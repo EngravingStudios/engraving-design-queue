@@ -29,20 +29,27 @@ MySQL, so the user host is `%`, not `localhost`.
 ```sql
 CREATE USER 'design_app'@'%' IDENTIFIED BY 'CHOOSE_A_STRONG_PASSWORD';
 
-GRANT SELECT (id, status)     ON fulfilment.orders   TO 'design_app'@'%';
-GRANT UPDATE (status)         ON fulfilment.orders   TO 'design_app'@'%';
-GRANT SELECT                  ON fulfilment.items    TO 'design_app'@'%';
-GRANT SELECT                  ON fulfilment.products TO 'design_app'@'%';
-GRANT SELECT                  ON fulfilment.sanitise TO 'design_app'@'%';
-GRANT INSERT                  ON fulfilment.notes    TO 'design_app'@'%';
+GRANT SELECT (id, status, internal_notes) ON fulfilment.orders   TO 'design_app'@'%';
+GRANT UPDATE (status)                     ON fulfilment.orders   TO 'design_app'@'%';
+GRANT SELECT                              ON fulfilment.items    TO 'design_app'@'%';
+GRANT SELECT                              ON fulfilment.products TO 'design_app'@'%';
+GRANT SELECT                              ON fulfilment.sanitise TO 'design_app'@'%';
+GRANT INSERT                              ON fulfilment.notes    TO 'design_app'@'%';
 
 FLUSH PRIVILEGES;
 ```
 
-Note on `notes`: INSERT only, no SELECT — the app writes a one-way
-audit breadcrumb ("Design Queue: item N DESIGNED by Andy") the moment
-a tick goes off→on, so if a wrong product ever reaches a customer,
-the order's audit trail shows who designed and who verified it.
+`internal_notes` (added 2026-08-04) lets office staff flag order-specific
+instructions (e.g. "customer very particular about layout") that surface as a red
+warning banner at the top of that order's block in the queue — read-only, same
+column-level-grant pattern as `id`/`status`.
+
+Note on `notes`: INSERT only, no SELECT — the app writes a one-way audit breadcrumb
+("Design Queue: Order #N DESIGNED by Andy") the moment the FIRST line in an order
+goes off→on for a given tick kind (an order has exactly one designer and one
+verifier, so this fires once per order per kind, not once per line) — so if a wrong
+product ever reaches a customer, the order's audit trail shows who designed and who
+verified it.
 Unticking writes nothing (no correction trail, by design). This is
 separate from and does not replace `data/ticks.json`, which remains
 the live/current tick state the UI reads — the comment is a
