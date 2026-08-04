@@ -115,6 +115,13 @@ node hash-password.js 'the-shared-password-you-chose'   # → design_queue.passw
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"  # → design_queue.session_secret
 ```
 
+**Process ownership (as of 2026-08-04):** this app runs as a dedicated,
+non-root system user, `svc-designqueue` — not root, and not shared with
+any other app on the droplet. `/var/www/design-queue` (including `.git`,
+`data/`, `config.json`) is owned by that user; run `git pull`, `npm
+install`, etc. as `sudo -u svc-designqueue -H bash -lc '...'` rather
+than as root or your own login user, so ownership stays consistent.
+
 Add three things to `/etc/orders-app/config.php` — the design_app DB
 password chosen in §1, and the two secrets just generated:
 
@@ -139,18 +146,22 @@ file, so rotating any of these later means editing `config.php` once
 and `pm2 restart design-queue` — never editing `config.json`.
 Requirements:
 - `php` CLI on the droplet (already there — the orders app is PHP)
-- the design-queue's Linux user can read /etc/orders-app/config.php
+- the design-queue's Linux user (`svc-designqueue`) can read
+  `/etc/orders-app/config.php` — granted via membership in the
+  `orders-secrets` group (file is `root:orders-secrets`, mode `640`),
+  not via ownership. See the `orders` repo's CLAUDE.md for the shared
+  permission model.
 Missing or typo'd references fail loudly at startup rather than
 half-starting the app.
 
 Make sure the `data/` folder is writable by whichever user runs the
-app (same user as everything else here — no special permissions
-needed, it's a normal folder inside the app's own directory).
+app — on this droplet that's `svc-designqueue`, a dedicated non-root
+system user (not shared with any other app here).
 
 Test run before PM2:
 
 ```bash
-node server.js
+sudo -u svc-designqueue -H bash -lc 'cd /var/www/design-queue && node server.js'
 # should print: Design Queue listening on 127.0.0.1:3050 under /design
 # Ctrl+C to stop
 ```
@@ -158,9 +169,12 @@ node server.js
 Then:
 
 ```bash
-pm2 start server.js --name design-queue
-pm2 save
+sudo -u svc-designqueue -H bash -lc 'cd /var/www/design-queue && pm2 start server.js --name design-queue && pm2 save'
 ```
+
+PM2 for this user is kept alive across reboots by the systemd unit
+`pm2-svc-designqueue` (enabled via `pm2 startup systemd -u svc-designqueue
+--hp /home/svc-designqueue`, run once as root).
 
 ---
 
@@ -227,6 +241,9 @@ without advertising the path.
    unmapped, which is expected).
 
 ## 5. Day-2 notes
+
+All `pm2`/log commands below run as the `svc-designqueue` system user, e.g.
+`sudo -u svc-designqueue -H pm2 restart design-queue` — not as root.
 
 - Add/remove staff: edit `staff` in config.json, `pm2 restart design-queue`.
 - Change batch/status names: `statuses` in config.json.
