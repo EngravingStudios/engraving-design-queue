@@ -70,6 +70,9 @@
 
   .order-block{margin:0 0 10px 10px}
   .order-block.multi{border:1px dashed var(--amber);border-radius:10px;padding:8px;background:rgba(230,162,60,.04)}
+  .internal-note-banner{display:flex;align-items:center;gap:10px;background:#a83232;color:#fff;font-size:14px;font-weight:800;letter-spacing:.02em;padding:10px 14px;border-radius:6px;margin-bottom:8px}
+  .internal-note-banner .tri{font-size:18px;line-height:1}
+  .internal-note-banner span{color:#fff;font-weight:700}
   .mix-banner.odd{background:#d96a6a}
   .mix-banner.odd .pos{color:#d96a6a}
   .mix-banner .ptype{font-weight:900}
@@ -482,6 +485,12 @@ function renderQueue(){
       const block=document.createElement("div");
       const isMulti=o.lines.length>1;   /* any multi-line order gets the dashed wrapper */
       block.className="order-block"+(isMulti?" multi":"");
+      if(o.internalNotes){
+        const noteBanner=document.createElement("div");
+        noteBanner.className="internal-note-banner";
+        noteBanner.innerHTML=`<span class="tri">⚠</span><span>${esc(o.internalNotes)}</span>`;
+        block.appendChild(noteBanner);
+      }
       o.lines.forEach((l,li)=>{
         const simInfo=sims[li];
         const sim=simInfo?o.lines[simInfo.j]:null;
@@ -620,11 +629,16 @@ function updateLineDOM(itemId){
 
 async function doCopy(p){
   const text=copyTexts[p.dataset.ci]||"";
+  /* Customer text sometimes has trailing spaces/tabs at the end of an
+     internal line, which throws off centring once engraved. Strip per
+     line, on the clipboard-write path only — the source registry
+     itself stays untouched (also used for sort/diff/similarity). */
+  const trimmed=text.split("\n").map(l=>l.replace(/[ \t]+$/,"")).join("\n");
   /* Chrome auto-converts \n to \r\n when writing plain text to the
      system clipboard; Firefox writes it verbatim. Some paste targets
      only treat \r\n as a line break, so normalise here — the source
      registry itself stays \n (used for sort/diff/similarity). */
-  const clip=text.replace(/\n/g,"\r\n");
+  const clip=trimmed.replace(/\n/g,"\r\n");
   try{ await navigator.clipboard.writeText(clip); }catch(e){ toast("Clipboard blocked — check browser permissions", true); }
   p.classList.add("flash");
   setTimeout(()=>p.classList.remove("flash"),700);
@@ -671,10 +685,15 @@ function focusNext(fromLine){
    for, so the line would land tucked behind them. Measure both and
    land just under them instead. */
 function scrollToTop(line){
+  /* Scroll relative to the line's wrapper, not the line itself — a
+     mixed-product/similarity warning banner (§5/§6) renders as a
+     sibling BEFORE .line inside .line-wrap, so anchoring on .line
+     alone pushed its own banner off-screen above the sticky headers. */
+  const anchor=line.closest(".line-wrap")||line;
   const header=document.querySelector("header");
   const heading=line.closest(".group")?.querySelector(".type-break");
   const offset=(header?header.offsetHeight:0)+(heading?heading.offsetHeight:0)+10;
-  const top=line.getBoundingClientRect().top+window.scrollY-offset;
+  const top=anchor.getBoundingClientRect().top+window.scrollY-offset;
   window.scrollTo({top,behavior:"smooth"});
 }
 
