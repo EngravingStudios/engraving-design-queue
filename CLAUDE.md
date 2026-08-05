@@ -35,6 +35,11 @@ This app's own DB user is `design_app`, scoped to column-level `SELECT`/`UPDATE`
 added 2026-08-04) plus `SELECT` on `items`/`products`/`sanitise` and `INSERT`-only on
 `notes` — never a broader-permissioned credential.
 
+See the `orders` repo's CLAUDE.md, "Credentials policy for any new app", for this made
+explicit as a standing rule across every app on the droplet — this app's own revisited
+"shared secrets only" draft above is exactly the failure mode that policy exists to
+prevent.
+
 ## Process ownership (as of 2026-08-04)
 PM2 runs this app as a dedicated system user, `svc-designqueue` — **not root**. Managed by
 systemd unit `pm2-svc-designqueue` (PM2_HOME=`/home/svc-designqueue/.pm2`); use
