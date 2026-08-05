@@ -148,8 +148,22 @@ lines needs separate handling.
   the `\b` fix above would now make a DB row safe, because this app's DB user has no
   `INSERT`/`UPDATE` grant on `sanitise` (SELECT only) — a built-in guarantees it's always
   on without needing a separate admin path into that table.
+- **Double-space collapsing** (`fixDoubleSpaces()`, added 2026-08-05): a fat-fingered
+  spacebar produces an accidental double space between two words, which this collapses to
+  one — EXCEPT where the wide spacing is a deliberate design feature, which must survive
+  untouched. Two protected patterns, checked per line: (1) **letter-spacing**, e.g.
+  `F  R  E  D  D  I  E` — if most of a line's space-separated tokens are single characters,
+  the whole line is left alone, on the theory it's a spaced-out word/name, not prose: (2)
+  **decorative flanking**, e.g. `-  I'm chipped  -` — a gap is left alone if the token on
+  either side of it is pure punctuation/symbols (not alphanumeric), since that reads as a
+  border/emphasis mark, not a typo. Everything else collapses. Deliberately NOT extended to
+  protect short real-word pairs (e.g. a hypothetical deliberate `HI  MUM`) — that would also
+  suppress fixing genuine typos between common short words, which is the far more frequent
+  case; the two protected patterns above were chosen because they're the ones actually seen
+  in practice and are structurally distinguishable from a typo, not because the heuristic
+  is exhaustive.
 
-Both run after the DB rule pass, before the final trim.
+Three run after the DB rule pass, before the final trim.
 
 ### 4. Grouping, sorting, colours
 **Product colour: full hue-wheel hash of `product_id`** (NOT a fixed palette — an earlier
@@ -421,6 +435,58 @@ for the audit breadcrumb below). On click:
   fresh once the server's own `orders_changed` broadcast triggers a re-render (no manual
   reset needed), on error/conflict it resets immediately.
 
+### 8a. Batch A/B split (added 2026-08-05)
+When two designers work the same batch, "Split A/B" (next to Move, batch tabs only)
+divides the WORK across them without touching the batch itself — Move still moves
+everything in one go, same as §8, regardless of any split. File-based, same rationale as
+ticks (§7): short-lived working state, not schema-worthy. Lives in
+`data/batch-splits.json` via `lib/batchSplits.js`, keyed by status value →
+`{ [productGroupName]: "A"|"B" }`.
+
+- **Split unit is the product group, not the order or line** — the exact same grouping the
+  queue already renders by (an order's first line's product name, `lib/queue.js`'s
+  `computeGroupTotals()`). Explicitly requested: keep whole product groups together (e.g.
+  ALL 33mm brass discs to one designer) rather than splitting by raw order/qty count, since
+  that's what lets someone work a group start-to-finish.
+- **Balance algorithm**: largest group first, each dropped into whichever bucket currently
+  has the smaller running qty total (the standard "longest processing time" bin-balancing
+  heuristic) — not a guaranteed even split, but close for any realistic mix of group sizes;
+  confirmed acceptable ("doesn't need to be exact, just roughly the same workload").
+- **Locking is permanent, by design** — once a group is assigned A or B it is NEVER
+  reassigned by a later recompute, only ever set the first time that name is seen for that
+  status. This was explicitly requested: staff work through EngraveLab in the order the
+  queue presents, and the verify pass depends on that same order holding — a group flipping
+  buckets mid-batch would break that.
+- **New orders arriving mid-batch require no action**: every queue fetch lazily assigns any
+  not-yet-locked group into whichever bucket's current live total is smaller, and locks it
+  immediately (`fillNew()`). Confirmed explicitly — batches aren't reassigned once staff are
+  working them, so there's no "manual re-split" control, it just silently keeps up.
+- **Filtering only ever hides whole groups, never reorders** — clicking the "A"/"B" pill
+  (which appears next to the tab once a status is split; "All" clears it) filters
+  `typeOrder` down to matching groups but leaves their relative order exactly as the
+  unfiltered queue would show it (tier → qty → order id, §4). This was the critical
+  requirement, not an afterthought: EngraveLab work happens in that same sequence for both
+  the design AND verify passes, so a filtered view has to reproduce it exactly, not just
+  show "the right subset in some order."
+- **Progress bars follow the active filter** (so e.g. a designer filtered to "A" sees
+  their own half's Designed/Verified %), but the **Move button always reads the full
+  unfiltered batch** — moving is status-driven (§8) and happens for everything regardless
+  of who's filtered to what, so its readiness can't be scoped to one half. Confirmed
+  explicitly: staff want to see progress on their own slice, but Move's green/grey state
+  must keep meaning "the whole batch is actually done."
+- **Stale-split protection**: a status value like `print_1st_batch` gets reused for a
+  completely new set of orders once the old batch is fully moved out. `moveBatch()` clears
+  that status's split data the moment the move commits — the normal, expected path. As a
+  belt-and-braces fallback (requested explicitly, in case a move happens outside the normal
+  flow — crash, manual DB edit), every queue fetch also checks: if NONE of a status's locked
+  group names are present in the current queue at all, the whole split is discarded as an
+  orphan from a previous cycle. A batch that's simply had some orders move through it during
+  the day still has plenty of overlap, so this never fires on ordinary same-day activity —
+  only on a full turnover.
+- Requires "Working as" first, same as every other mutating action, even though nothing is
+  attributed to a name on disk — kept for UX consistency with tick/move/issue, not because
+  the split itself needs an audit trail.
+
 ### 9. Issue flag → HelpScout → Pending
 Per-line "⛔ Issue" button (red on hover), positioned right of the Verified tick. Opens a
 modal requiring free-text notes (blocked until non-empty) — "this will create a HelpScout
@@ -611,10 +677,11 @@ re-cloning. `node_modules/`, `config.json`, and `data/` are gitignored
 
 ```bash
 npm install
-mkdir -p data           # holds ticks.json, product-colours.json, and
-                         # sessions/ (login sessions — file-backed so
-                         # restarts don't log everyone out) — working
-                         # state only, safe to wipe if ever needed
+mkdir -p data           # holds ticks.json, product-colours.json,
+                         # batch-splits.json (§8a), and sessions/
+                         # (login sessions — file-backed so restarts
+                         # don't log everyone out) — working state
+                         # only, safe to wipe if ever needed
 cp config.example.json config.json
 ```
 
@@ -723,6 +790,10 @@ All `pm2`/log commands below run as the `svc-designqueue` system user, e.g.
 - Tick data lives in `data/ticks.json`. It expires on its own after 3 days — nothing to
   maintain. Safe to delete the file if you ever want to clear all current ticks (e.g.
   testing); the app recreates it.
+- A/B split data lives in `data/batch-splits.json` (§8a). Clears itself automatically when
+  a batch is moved, plus self-heals if a status's stored split no longer overlaps with
+  what's actually in it — nothing to maintain. Safe to delete if you ever want to clear
+  every active split; the app recreates it.
 - Login sessions live in `data/sessions/` (file-backed, survives `pm2 restart
   design-queue` — see §12 above).
 - Home IP changed: edit the allowlist snippet, `nginx -s reload`.

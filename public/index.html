@@ -53,6 +53,15 @@
   .move-btn.loading{cursor:wait;background:#20252b;border-color:var(--panel-edge);color:var(--ink-dim);box-shadow:none;padding-left:34px;position:relative}
   .move-btn.loading::before{content:"";position:absolute;left:12px;top:50%;width:14px;height:14px;margin-top:-7px;border:2px solid rgba(255,255,255,.2);border-top-color:var(--brass);border-radius:50%;animation:spin .7s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
+  .split-btn{align-self:center;cursor:pointer;font:inherit;font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:9px 18px;border-radius:8px;border:1px solid var(--panel-edge);background:#20252b;color:var(--ink-dim);transition:all .2s}
+  .split-btn:hover{color:var(--ink);border-color:var(--brass)}
+  .split-filter{display:flex;align-self:center;gap:2px;background:#181c21;border:1px solid var(--panel-edge);border-radius:8px;padding:3px}
+  .split-pill{cursor:pointer;font:inherit;font-size:12px;font-weight:800;letter-spacing:.04em;padding:6px 14px;border-radius:6px;border:none;background:transparent;color:var(--ink-dim);transition:all .15s}
+  .split-pill:hover{color:var(--ink)}
+  .split-pill.active{background:var(--brass);color:#1d2126}
+  .group-split-tag{font-size:11px;font-weight:800;letter-spacing:.05em;padding:1px 8px;border-radius:8px;background:#181c21;border:1px solid var(--panel-edge);color:var(--ink-dim);margin-left:8px}
+  .group-split-tag.A{color:var(--blue);border-color:var(--blue)}
+  .group-split-tag.B{color:var(--brass-hi);border-color:var(--brass)}
 
   main{max-width:1240px;margin:18px auto;padding:0 18px}
   .empty-batch{text-align:center;color:var(--ink-dim);font-size:14px;padding:60px 20px;border:1px dashed var(--panel-edge);border-radius:10px;margin-top:10px}
@@ -237,6 +246,8 @@ let currentStatus = null;       /* status VALUE, e.g. print_1st_batch */
 let currentUser = localStorage.getItem("dq_user") || null;
 let orders = [];                /* current batch data from server */
 let counts = {};                /* order counts per status */
+let splitActive = false;        /* is currentStatus split A/B? (from server) */
+let splitFilter = null;         /* "A" | "B" | null (unfiltered) */
 const ackedLines = new Set();   /* different-product warnings accepted */
 let copyTexts = [];
 
@@ -313,6 +324,7 @@ function requireUser() {
 }
 
 /* ═══════════════ Data loading ═══════════════ */
+let lastLoadedStatus = null;
 async function loadQueue() {
   const res = await fetch(BASE + "/api/queue?status=" + encodeURIComponent(currentStatus));
   if (res.status === 401) return (location.href = BASE + "/login");
@@ -320,6 +332,13 @@ async function loadQueue() {
   if (data.error) return toast(data.error, true);
   orders = data.orders;
   counts = data.counts;
+  splitActive = !!data.splitActive;
+  /* Reset the A/B filter on a real tab switch, or if the split for
+     this status went away (moved out / pruned stale — batchSplits.js)
+     — a filter left pointing at a bucket that no longer exists would
+     just silently show nothing. */
+  if (data.status !== lastLoadedStatus || !splitActive) splitFilter = null;
+  lastLoadedStatus = data.status;
   renderTabs();
   renderQueue();
 }
@@ -418,6 +437,26 @@ function renderTabs(){
   });
   if(CFG.statuses.batches.some(b=>b.value===currentStatus)){
     const label=CFG.statuses.batches.find(b=>b.value===currentStatus).label;
+
+    if(splitActive){
+      const wrap=document.createElement("div");
+      wrap.className="split-filter";
+      [["All",null],["A","A"],["B","B"]].forEach(([text,val])=>{
+        const p=document.createElement("button");
+        p.className="split-pill"+(splitFilter===val?" active":"");
+        p.textContent=text;
+        p.addEventListener("click", ()=>{ splitFilter=val; renderTabs(); renderQueue(); });
+        wrap.appendChild(p);
+      });
+      tabsEl.appendChild(wrap);
+    }else{
+      const splitBtn=document.createElement("button");
+      splitBtn.className="split-btn"; splitBtn.id="splitBtn";
+      splitBtn.textContent="Split A/B";
+      splitBtn.addEventListener("click", ()=>{ if(requireUser()) requestSplit(); });
+      tabsEl.appendChild(splitBtn);
+    }
+
     const btn=document.createElement("button");
     btn.className="move-btn"; btn.id="moveBtn"; btn.disabled=true;
     btn.textContent=`Move ${label} → ${CFG.statuses.target.label}`;
@@ -441,7 +480,19 @@ function renderQueue(){
     return;
   }
 
-  const typeOrder=[...new Set(orders.map(o=>o.lines[0].productName))];
+  /* A group's split bucket is atomic (every order in it shares the
+     same lock — batchSplits.js), so filtering out whole groups here
+     is enough; never re-sorts or repacks what's left, so a filtered
+     view shows exactly the same relative order (§4) as unfiltered —
+     that's what keeps it lined up with EngraveLab's job order. */
+  const typeOrder=[...new Set(orders.map(o=>o.lines[0].productName))]
+    .filter(type=>!splitFilter || orders.find(o=>o.lines[0].productName===type)?.splitBucket===splitFilter);
+
+  if(!typeOrder.length){
+    queue.innerHTML=`<div class="empty-batch">Nothing in "${esc(splitFilter)}" right now.</div>`;
+    refreshProgress();
+    return;
+  }
 
   typeOrder.forEach(type=>{
     const group=document.createElement("div");
@@ -451,6 +502,7 @@ function renderQueue(){
     const colour=typeColour(type, repLine.productId, repLine.colour);
     group.style.setProperty("--gacc", colour);
     const totalParts=groupOrders.flatMap(o=>o.lines).reduce((s,l)=>s+l.qty,0);
+    const groupBucket=groupOrders[0].splitBucket;
 
     groupOrders.sort((a,b)=>{
       const ra=sortRank(a.lines[0]), rb=sortRank(b.lines[0]);
@@ -461,6 +513,7 @@ function renderQueue(){
       <div class="type-break">
         <div class="rule left"></div>
         <div class="type-name">${esc(type)}</div>
+        ${groupBucket?`<span class="group-split-tag ${groupBucket}">${groupBucket}</span>`:""}
         <span class="type-count">Quantity: <b>${totalParts}</b></span>
         <div class="rule"></div>
       </div>`;
@@ -656,8 +709,16 @@ $("diffConfirm").addEventListener("click", ()=>{
 });
 
 /* ═══════════════ Progress + focus ═══════════════ */
+/* The progress BARS follow the active A/B filter (so e.g. Alisha sees
+   how much of just her half is done), but the Move button always
+   reads the FULL unfiltered batch — moving is status-driven (§8), it
+   happens for everything regardless of who's filtered to what, so
+   its readiness can't be scoped to one half. */
 function refreshProgress(){
-  const lines=orders.flatMap(o=>o.lines);
+  const visible=splitFilter
+    ? orders.filter(o=>o.splitBucket===splitFilter)
+    : orders;
+  const lines=visible.flatMap(o=>o.lines);
   const total=lines.length;
   const designed=lines.filter(l=>l.designedAt).length;
   const verified=lines.filter(l=>l.verifiedAt).length;
@@ -667,7 +728,8 @@ function refreshProgress(){
   $("barV").style.width=pv+"%"; $("pctV").textContent=pv+"%";
   const btn=$("moveBtn");
   if(btn){
-    const complete=total>0&&designed===total&&verified===total;
+    const allLines=orders.flatMap(o=>o.lines);
+    const complete=allLines.length>0&&allLines.every(l=>l.designedAt)&&allLines.every(l=>l.verifiedAt);
     btn.disabled=!complete;
     btn.classList.toggle("ready",complete);
   }
@@ -739,6 +801,19 @@ function requestMove(){
     // client also receives) triggers loadQueue()->renderTabs(),
     // rebuilding the button fresh — no manual reset needed here.
     toast(`${res.moved} order${res.moved!==1?"s":""} moved to ${CFG.statuses.target.label}`);
+  });
+}
+/* ═══════════════ Split batch A/B ═══════════════ */
+function requestSplit(){
+  const btn=$("splitBtn");
+  if(btn) btn.disabled=true;
+  socket.emit("split_batch",{status:currentStatus,user:currentUser},(res)=>{
+    if(btn) btn.disabled=false;
+    if(res.error) return toast(res.error,true);
+    // success (or already-split no-op): the server's own
+    // orders_changed broadcast triggers loadQueue(), which picks up
+    // splitActive and rebuilds the tab controls fresh.
+    if(res.started) toast("Batch split A/B — each designer can now filter to their half");
   });
 }
 $("moveCancel").addEventListener("click",()=>$("moveOverlay").classList.remove("show"));

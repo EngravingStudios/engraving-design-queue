@@ -13,6 +13,7 @@ const queue = require("./lib/queue");
 const helpscout = require("./lib/helpscout");
 const ticks = require("./lib/ticks");
 const colours = require("./lib/colours");
+const batchSplits = require("./lib/batchSplits");
 
 const config = require("./lib/config").load(
   path.join(__dirname, "config.json")
@@ -23,8 +24,9 @@ const DATA_DIR = path.join(__dirname, "data");
 db.init(config.db);
 queue.init(config);
 helpscout.init(config.helpscout);
-ticks.init(DATA_DIR);     // file-backed tick state — see lib/ticks.js
-colours.init(DATA_DIR);   // optional colour overrides — see lib/colours.js
+ticks.init(DATA_DIR);        // file-backed tick state — see lib/ticks.js
+colours.init(DATA_DIR);      // optional colour overrides — see lib/colours.js
+batchSplits.init(DATA_DIR);  // file-backed A/B split state — see lib/batchSplits.js
 
 const app = express();
 app.set("trust proxy", 1); // behind Nginx
@@ -106,7 +108,9 @@ router.get("/api/queue", requireAuth, async (req, res) => {
       queue.fetchQueue(status),
       queue.statusCounts(),
     ]);
-    res.json({ status, orders, counts });
+    // fetchQueue() may have just lazily locked in a new group's split
+    // bucket (see queue.js/batchSplits.js) — check AFTER, not before.
+    res.json({ status, orders, counts, splitActive: queue.isSplitActive(status) });
   } catch (e) {
     console.error("[api/queue]", e);
     res.status(500).json({ error: "queue fetch failed" });
@@ -178,6 +182,25 @@ io.on("connection", (socket) => {
     } catch (e) {
       console.error("[report_issue]", e);
       cb && cb({ error: "Could not create the ticket — order NOT moved. Try again or raise it manually." });
+    }
+  });
+
+  /* Split a batch A/B (lib/batchSplits.js). No-op if a valid split is
+     already active for this status — locks are permanent once set. */
+  socket.on("split_batch", async (payload, cb) => {
+    try {
+      const { status, user } = payload || {};
+      const validFrom = config.statuses.batches.map((b) => b.value);
+      if (!validFrom.includes(status))
+        return cb && cb({ error: "unknown batch" });
+      if (!config.staff.includes(user))
+        return cb && cb({ error: "unknown user" });
+      const result = await queue.splitBatch(status);
+      io.emit("orders_changed", { reason: "split", status });
+      cb && cb({ ok: true, ...result });
+    } catch (e) {
+      console.error("[split_batch]", e);
+      cb && cb({ error: "split failed" });
     }
   });
 });
