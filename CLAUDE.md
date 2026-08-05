@@ -436,12 +436,24 @@ for the audit breadcrumb below). On click:
   reset needed), on error/conflict it resets immediately.
 
 ### 8a. Batch A/B split (added 2026-08-05)
-When two designers work the same batch, "Split A/B" (next to Move, batch tabs only)
-divides the WORK across them without touching the batch itself — Move still moves
-everything in one go, same as §8, regardless of any split. File-based, same rationale as
-ticks (§7): short-lived working state, not schema-worthy. Lives in
-`data/batch-splits.json` via `lib/batchSplits.js`, keyed by status value →
-`{ [productGroupName]: "A"|"B" }`.
+When two designers work the same batch, splitting divides the WORK across them without
+touching the batch itself — Move still moves everything in one go, same as §8, regardless
+of any split. File-based, same rationale as ticks (§7): short-lived working state, not
+schema-worthy. Lives in `data/batch-splits.json` via `lib/batchSplits.js`, keyed by status
+value → `{ [productGroupName]: "A"|"B" }`.
+
+**UI**: a small split-glyph icon sits inline next to EVERY batch tab's label (not just the
+currently active one — confirmed explicitly, so any batch can be split without switching to
+it first). Clicking it opens a confirm dialog ("Split Batch 1 into A/B? Each product group
+will go in full to one designer…") — Cancel / "Split", reusing the same overlay/modal
+pattern as Move's conflict warning. Requires "Working as" first, same as every other
+mutating action, purely for UX consistency with tick/move/issue — nothing is attributed to
+a name on disk. Once a status is split, that tab's icon disappears (nothing left to
+configure) and is replaced by a second row directly under THAT tab's own label — either the
+live "All / A / B" filter pills, if it's the tab currently being viewed, or a compact static
+"Split A/B" badge if it's a different, not-currently-active split batch — confirmed
+explicitly: the pills need to visually read as belonging to their specific tab, not sit off
+in a separate control area.
 
 - **Split unit is the product group, not the order or line** — the exact same grouping the
   queue already renders by (an order's first line's product name, `lib/queue.js`'s
@@ -462,12 +474,16 @@ ticks (§7): short-lived working state, not schema-worthy. Lives in
   immediately (`fillNew()`). Confirmed explicitly — batches aren't reassigned once staff are
   working them, so there's no "manual re-split" control, it just silently keeps up.
 - **Filtering only ever hides whole groups, never reorders** — clicking the "A"/"B" pill
-  (which appears next to the tab once a status is split; "All" clears it) filters
-  `typeOrder` down to matching groups but leaves their relative order exactly as the
+  filters `typeOrder` down to matching groups but leaves their relative order exactly as the
   unfiltered queue would show it (tier → qty → order id, §4). This was the critical
   requirement, not an afterthought: EngraveLab work happens in that same sequence for both
   the design AND verify passes, so a filtered view has to reproduce it exactly, not just
   show "the right subset in some order."
+- **`splitStatusMap()`** (`lib/queue.js`) returns split-active state for every batch status
+  in one call, not just whichever one the client happens to be viewing — needed so a tab
+  you're NOT currently on can still show its own icon/badge correctly. Cheap (in-memory
+  only, no DB round trip), returned on every `/api/queue` response regardless of which
+  status was requested.
 - **Progress bars follow the active filter** (so e.g. a designer filtered to "A" sees
   their own half's Designed/Verified %), but the **Move button always reads the full
   unfiltered batch** — moving is status-driven (§8) and happens for everything regardless

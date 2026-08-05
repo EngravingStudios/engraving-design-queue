@@ -40,10 +40,11 @@
   .pct{font-size:13px;font-weight:700;min-width:48px;text-align:right;font-variant-numeric:tabular-nums}
   .pct.d{color:var(--blue)} .pct.v{color:var(--green)}
 
-  .tabs{display:flex;gap:4px;margin-top:12px;overflow-x:auto}
-  .tab{cursor:pointer;user-select:none;white-space:nowrap;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-dim);padding:10px 16px;border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;transition:all .15s}
+  .tabs{display:flex;align-items:flex-start;gap:4px;margin-top:12px;overflow-x:auto}
+  .tab{cursor:pointer;user-select:none;white-space:nowrap;display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-dim);padding:10px 14px;border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;transition:all .15s}
   .tab:hover{color:var(--ink)}
   .tab.active{background:var(--bench);border-color:var(--panel-edge);color:var(--brass-hi);position:relative;top:1px}
+  .tab-top{display:flex;align-items:center;gap:8px}
   .tab .count{font-size:11px;font-variant-numeric:tabular-nums;background:#2b3138;color:var(--ink);border-radius:10px;padding:1px 8px;min-width:24px;text-align:center}
   .tab.active .count{background:var(--brass);color:#1d2126}
   .move-btn{margin-left:auto;align-self:center;cursor:pointer;font:inherit;font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:9px 18px;border-radius:8px;border:1px solid var(--panel-edge);background:#20252b;color:#5c6670;transition:all .2s}
@@ -53,12 +54,21 @@
   .move-btn.loading{cursor:wait;background:#20252b;border-color:var(--panel-edge);color:var(--ink-dim);box-shadow:none;padding-left:34px;position:relative}
   .move-btn.loading::before{content:"";position:absolute;left:12px;top:50%;width:14px;height:14px;margin-top:-7px;border:2px solid rgba(255,255,255,.2);border-top-color:var(--brass);border-radius:50%;animation:spin .7s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
-  .split-btn{align-self:center;cursor:pointer;font:inherit;font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:9px 18px;border-radius:8px;border:1px solid var(--panel-edge);background:#20252b;color:var(--ink-dim);transition:all .2s}
-  .split-btn:hover{color:var(--ink);border-color:var(--brass)}
-  .split-filter{display:flex;align-self:center;gap:2px;background:#181c21;border:1px solid var(--panel-edge);border-radius:8px;padding:3px}
-  .split-pill{cursor:pointer;font:inherit;font-size:12px;font-weight:800;letter-spacing:.04em;padding:6px 14px;border-radius:6px;border:none;background:transparent;color:var(--ink-dim);transition:all .15s}
+  /* Split icon — sits inline with every batch tab's label, triggers
+     the confirm dialog for that specific batch (works regardless of
+     which tab is currently active). */
+  .split-icon{cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:5px;border:1px solid var(--panel-edge);background:transparent;color:var(--ink-dim);flex-shrink:0;transition:all .15s}
+  .split-icon:hover{color:var(--brass-hi);border-color:var(--brass)}
+  /* A/B/All filter pills — rendered as a second row under the tab
+     label they belong to, so it's visually obvious which batch
+     they're filtering. Only interactive on the active tab; a split
+     but not-currently-viewed tab shows the compact static badge
+     below instead. */
+  .split-filter{display:flex;gap:2px;background:#181c21;border:1px solid var(--panel-edge);border-radius:7px;padding:2px;align-self:flex-start}
+  .split-pill{cursor:pointer;font:inherit;font-size:11px;font-weight:800;letter-spacing:.04em;padding:4px 10px;border-radius:5px;border:none;background:transparent;color:var(--ink-dim);transition:all .15s}
   .split-pill:hover{color:var(--ink)}
   .split-pill.active{background:var(--brass);color:#1d2126}
+  .split-badge{align-self:flex-start;font-size:10px;font-weight:800;letter-spacing:.06em;padding:3px 9px;border-radius:6px;background:#181c21;border:1px solid var(--panel-edge);color:var(--ink-dim)}
   .group-split-tag{font-size:11px;font-weight:800;letter-spacing:.05em;padding:1px 8px;border-radius:8px;background:#181c21;border:1px solid var(--panel-edge);color:var(--ink-dim);margin-left:8px}
   .group-split-tag.A{color:var(--blue);border-color:var(--blue)}
   .group-split-tag.B{color:var(--brass-hi);border-color:var(--brass)}
@@ -193,6 +203,18 @@
   </div>
 </div>
 
+<div class="overlay" id="splitOverlay">
+  <div class="modal">
+    <h2>Split <span id="splitBatchName"></span> into A/B?</h2>
+    <p>Each product group will go in full to one designer — groups are never split across
+      both. Once set, a group's side is locked and won't change.</p>
+    <div class="modal-btns">
+      <button class="btn-cancel" id="splitCancel">Cancel</button>
+      <button class="btn-confirm" id="splitConfirm">Split</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="diffOverlay">
   <div class="modal red">
     <h2>⚠ Different product!</h2>
@@ -246,8 +268,10 @@ let currentStatus = null;       /* status VALUE, e.g. print_1st_batch */
 let currentUser = localStorage.getItem("dq_user") || null;
 let orders = [];                /* current batch data from server */
 let counts = {};                /* order counts per status */
-let splitActive = false;        /* is currentStatus split A/B? (from server) */
+let splits = {};                 /* { [batchStatus]: boolean } — every batch tab, not just current */
+let splitActive = false;        /* is currentStatus split A/B? (derived from splits) */
 let splitFilter = null;         /* "A" | "B" | null (unfiltered) */
+let pendingSplitStatus = null;  /* status awaiting confirm in splitOverlay */
 const ackedLines = new Set();   /* different-product warnings accepted */
 let copyTexts = [];
 
@@ -332,7 +356,8 @@ async function loadQueue() {
   if (data.error) return toast(data.error, true);
   orders = data.orders;
   counts = data.counts;
-  splitActive = !!data.splitActive;
+  splits = data.splits || {};
+  splitActive = !!splits[currentStatus];
   /* Reset the A/B filter on a real tab switch, or if the split for
      this status went away (moved out / pruned stale — batchSplits.js)
      — a filter left pointing at a bucket that no longer exists would
@@ -424,39 +449,78 @@ function typeColour(name, productId, override){
 }
 
 /* ═══════════════ Tabs ═══════════════ */
+/* Small "split" glyph — one node branching into two — used as the
+   per-tab icon that opens the split confirm dialog. currentColor so
+   it follows the tab's own text colour (dim, brightens on hover). */
+const SPLIT_ICON_SVG = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v6M12 10l-6 7M12 10l6 7"/><circle cx="12" cy="4" r="1.6" fill="currentColor" stroke="none"/><circle cx="6" cy="19" r="1.6" fill="currentColor" stroke="none"/><circle cx="18" cy="19" r="1.6" fill="currentColor" stroke="none"/></svg>`;
+
 function renderTabs(){
   const tabsEl=$("tabs");
   tabsEl.innerHTML="";
   const all=[...CFG.statuses.batches, CFG.statuses.target];
-  all.forEach(s=>{
-    const t=document.createElement("div");
-    t.className="tab"+(s.value===currentStatus?" active":"");
-    t.innerHTML=`${esc(s.label)} <span class="count">${counts[s.value] ?? 0}</span>`;
-    t.addEventListener("click", ()=>{ currentStatus=s.value; loadQueue(); });
-    tabsEl.appendChild(t);
-  });
-  if(CFG.statuses.batches.some(b=>b.value===currentStatus)){
-    const label=CFG.statuses.batches.find(b=>b.value===currentStatus).label;
+  const isBatch=(v)=>CFG.statuses.batches.some(b=>b.value===v);
 
-    if(splitActive){
-      const wrap=document.createElement("div");
-      wrap.className="split-filter";
-      [["All",null],["A","A"],["B","B"]].forEach(([text,val])=>{
-        const p=document.createElement("button");
-        p.className="split-pill"+(splitFilter===val?" active":"");
-        p.textContent=text;
-        p.addEventListener("click", ()=>{ splitFilter=val; renderTabs(); renderQueue(); });
-        wrap.appendChild(p);
-      });
-      tabsEl.appendChild(wrap);
-    }else{
-      const splitBtn=document.createElement("button");
-      splitBtn.className="split-btn"; splitBtn.id="splitBtn";
-      splitBtn.textContent="Split A/B";
-      splitBtn.addEventListener("click", ()=>{ if(requireUser()) requestSplit(); });
-      tabsEl.appendChild(splitBtn);
+  all.forEach(s=>{
+    const isActiveTab=s.value===currentStatus;
+    const t=document.createElement("div");
+    t.className="tab"+(isActiveTab?" active":"");
+    t.addEventListener("click", ()=>{ currentStatus=s.value; loadQueue(); });
+
+    const top=document.createElement("div");
+    top.className="tab-top";
+    top.innerHTML=`<span>${esc(s.label)}</span><span class="count">${counts[s.value] ?? 0}</span>`;
+    t.appendChild(top);
+
+    /* Split icon lives on EVERY batch tab (not just the active one),
+       so any batch can be split without switching to it first. Once
+       split, the icon is replaced by either the live A/B/All filter
+       (on the tab you're actually viewing) or a compact static badge
+       (on a split tab you're not currently on) — placed as a second
+       row directly under that tab's own label, so it's unambiguous
+       which batch the pills/badge belong to. */
+    if(isBatch(s.value)){
+      if(splits[s.value]){
+        if(isActiveTab){
+          const wrap=document.createElement("div");
+          wrap.className="split-filter";
+          [["All",null],["A","A"],["B","B"]].forEach(([text,val])=>{
+            const p=document.createElement("button");
+            p.className="split-pill"+(splitFilter===val?" active":"");
+            p.textContent=text;
+            p.addEventListener("click", (e)=>{
+              e.stopPropagation(); // don't also trigger the tab-switch handler
+              splitFilter=val; renderTabs(); renderQueue();
+            });
+            wrap.appendChild(p);
+          });
+          t.appendChild(wrap);
+        }else{
+          const badge=document.createElement("span");
+          badge.className="split-badge";
+          badge.textContent="Split A/B";
+          t.appendChild(badge);
+        }
+      }else{
+        const icon=document.createElement("button");
+        icon.className="split-icon";
+        icon.title=`Split ${s.label} into A/B`;
+        icon.innerHTML=SPLIT_ICON_SVG;
+        icon.addEventListener("click", (e)=>{
+          e.stopPropagation();
+          if(!requireUser()) return;
+          pendingSplitStatus=s.value;
+          $("splitBatchName").textContent=s.label;
+          $("splitOverlay").classList.add("show");
+        });
+        top.appendChild(icon);
+      }
     }
 
+    tabsEl.appendChild(t);
+  });
+
+  if(CFG.statuses.batches.some(b=>b.value===currentStatus)){
+    const label=CFG.statuses.batches.find(b=>b.value===currentStatus).label;
     const btn=document.createElement("button");
     btn.className="move-btn"; btn.id="moveBtn"; btn.disabled=true;
     btn.textContent=`Move ${label} → ${CFG.statuses.target.label}`;
@@ -804,18 +868,24 @@ function requestMove(){
   });
 }
 /* ═══════════════ Split batch A/B ═══════════════ */
-function requestSplit(){
-  const btn=$("splitBtn");
-  if(btn) btn.disabled=true;
-  socket.emit("split_batch",{status:currentStatus,user:currentUser},(res)=>{
-    if(btn) btn.disabled=false;
+function requestSplit(status){
+  socket.emit("split_batch",{status,user:currentUser},(res)=>{
     if(res.error) return toast(res.error,true);
     // success (or already-split no-op): the server's own
     // orders_changed broadcast triggers loadQueue(), which picks up
-    // splitActive and rebuilds the tab controls fresh.
+    // the updated splits map and rebuilds the tab controls fresh.
     if(res.started) toast("Batch split A/B — each designer can now filter to their half");
   });
 }
+$("splitCancel").addEventListener("click",()=>{
+  $("splitOverlay").classList.remove("show");
+  pendingSplitStatus=null;
+});
+$("splitConfirm").addEventListener("click",()=>{
+  $("splitOverlay").classList.remove("show");
+  if(pendingSplitStatus) requestSplit(pendingSplitStatus);
+  pendingSplitStatus=null;
+});
 $("moveCancel").addEventListener("click",()=>$("moveOverlay").classList.remove("show"));
 $("moveConfirm").addEventListener("click",()=>{
   $("moveOverlay").classList.remove("show");

@@ -110,7 +110,9 @@ router.get("/api/queue", requireAuth, async (req, res) => {
     ]);
     // fetchQueue() may have just lazily locked in a new group's split
     // bucket (see queue.js/batchSplits.js) — check AFTER, not before.
-    res.json({ status, orders, counts, splitActive: queue.isSplitActive(status) });
+    // splits covers every batch tab (not just the one requested) so
+    // the split icon/pills can render correctly on all of them.
+    res.json({ status, orders, counts, splits: queue.splitStatusMap() });
   } catch (e) {
     console.error("[api/queue]", e);
     res.status(500).json({ error: "queue fetch failed" });
