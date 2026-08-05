@@ -557,6 +557,20 @@ name that's still unmapped, which is an acceptable trade.
 - Reconnect resync: on Socket.IO reconnect (tablet waking from sleep, wifi blip, server
   restart), refetch the current batch so any missed updates appear — don't rely solely on
   live push for state that may have been missed while disconnected.
+- **Tab-switch loading state (added 2026-08-05)**: switching batch tabs needs a real DB
+  round trip (§8), which the UI previously gave zero feedback for — the old tab stayed
+  highlighted and the old batch's orders stayed on screen until the fetch resolved, making
+  the switch feel unresponsive/broken for that gap. `switchStatus()` in `public/index.html`
+  now updates `currentStatus` and re-renders the tab bar (so the clicked tab highlights
+  immediately) BEFORE the fetch even starts, and shows a spinner in place of the queue
+  content while it's in flight. Deliberately NOT applied to background refreshes
+  (Socket.IO reconnect, `orders_changed`) — those are near-instant and blanking the screen
+  mid-scroll for a live update someone else triggered would be disruptive, not helpful.
+  Added a request-sequence guard (`loadSeq`) alongside this: showing the new tab as active
+  immediately makes rapid tab-hopping more likely, and without ordering a slower/older
+  response landing after a newer one would silently overwrite the display with stale data
+  for a tab that's no longer selected — each response now checks it's still the latest
+  request before applying itself.
 
 **Real bug, easy to misdiagnose as a cookie/session problem**: the Socket.IO client script
 was loaded via a plain relative `<script src="socket.io/socket.io.js">`. Relative URLs

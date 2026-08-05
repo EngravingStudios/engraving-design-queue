@@ -75,6 +75,8 @@
 
   main{max-width:1240px;margin:18px auto;padding:0 18px}
   .empty-batch{text-align:center;color:var(--ink-dim);font-size:14px;padding:60px 20px;border:1px dashed var(--panel-edge);border-radius:10px;margin-top:10px}
+  .queue-loading{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:90px 20px;color:var(--ink-dim);font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+  .queue-loading .spinner{width:32px;height:32px;border:3px solid rgba(255,255,255,.12);border-top-color:var(--brass);border-radius:50%;animation:spin .8s linear infinite}
 
   .type-break{display:flex;align-items:center;gap:16px;margin:36px 0 14px;
     position:sticky;top:var(--header-h,0px);z-index:5;
@@ -322,6 +324,7 @@ socket.on("orders_changed", () => loadQueue());
   if (!CFG.staff.includes(currentUser)) currentUser = null;
   renderWho();
   currentStatus = CFG.statuses.batches[0].value;
+  showQueueLoading();
   await loadQueue();
 })();
 
@@ -348,11 +351,33 @@ function requireUser() {
 }
 
 /* ═══════════════ Data loading ═══════════════ */
+function showQueueLoading(){
+  $("queue").innerHTML = `<div class="queue-loading"><div class="spinner"></div>Loading…</div>`;
+}
+/* Explicit user-initiated switch (tab click) — highlight the new tab
+   immediately and show a spinner where the queue content is, rather
+   than leaving the old batch on screen (now for the wrong tab) until
+   the DB round trip finishes. Background refreshes (reconnect,
+   orders_changed) deliberately skip this — those are near-instant and
+   blanking the screen mid-scroll for a live update someone else
+   triggered would just be disruptive. */
+function switchStatus(value){
+  if (value === currentStatus) return;
+  currentStatus = value;
+  splitFilter = null; // avoid a stale pill flashing "active" under the new tab while loading
+  renderTabs();
+  showQueueLoading();
+  loadQueue();
+}
+
 let lastLoadedStatus = null;
+let loadSeq = 0; // guards against a slower/older request landing after a newer one
 async function loadQueue() {
+  const seq = ++loadSeq;
   const res = await fetch(BASE + "/api/queue?status=" + encodeURIComponent(currentStatus));
   if (res.status === 401) return (location.href = BASE + "/login");
   const data = await res.json();
+  if (seq !== loadSeq) return; // superseded by a later call (e.g. another tab click) — drop it
   if (data.error) return toast(data.error, true);
   orders = data.orders;
   counts = data.counts;
@@ -464,7 +489,7 @@ function renderTabs(){
     const isActiveTab=s.value===currentStatus;
     const t=document.createElement("div");
     t.className="tab"+(isActiveTab?" active":"");
-    t.addEventListener("click", ()=>{ currentStatus=s.value; loadQueue(); });
+    t.addEventListener("click", ()=>switchStatus(s.value));
 
     const top=document.createElement("div");
     top.className="tab-top";
