@@ -554,6 +554,13 @@ name that's still unmapped, which is an acceptable trade.
 - Tick boxes sized for **touch** (44px+) — this is a tablet-first UI, not desktop.
 - Marketplace name/badge (Shopify/eBay/Amazon) explicitly REMOVED from line display — not
   needed, was in an earlier version, cut deliberately.
+- Favicon (added 2026-08-05): `public/favicon.webp` (32×32, Engraving Studios "E" mark),
+  referenced with the absolute path `/design/favicon.webp` in both `index.html` and
+  `login.html` — an absolute path is required here (not a bare relative `favicon.webp`) for
+  the same reason as the Socket.IO script fix above: it must resolve the same regardless of
+  whether the page URL has a trailing slash. Same icon applied across every app on this
+  droplet (`orders`, `automation`, `mount-stock`) for a consistent brand — see each repo's
+  own CLAUDE.md for its specific path.
 - Reconnect resync: on Socket.IO reconnect (tablet waking from sleep, wifi blip, server
   restart), refetch the current batch so any missed updates appear — don't rely solely on
   live push for state that may have been missed while disconnected.
@@ -571,6 +578,15 @@ name that's still unmapped, which is an acceptable trade.
   response landing after a newer one would silently overwrite the display with stale data
   for a tab that's no longer selected — each response now checks it's still the latest
   request before applying itself.
+- **Stray vertical scrollbar on `.tabs` (fixed 2026-08-05)**: `.tabs` sets `overflow-x:auto`
+  for horizontal scrolling (many tabs on a narrow screen) but never set `overflow-y`. Per
+  the CSS spec, when one axis is a non-`visible` overflow value the browser computes the
+  other axis to `auto` too if it was `visible` — so `.tabs` silently got `overflow-y:auto`
+  as well, and once the §8a split feature made tabs variable-height (a plain single-row tab
+  vs. one with a second row of pills/badge), that was enough sub-pixel height difference to
+  tip a real, permanently-visible vertical scrollbar into existence, even though nothing
+  there ever needs to scroll vertically. Fixed by setting `overflow-y:hidden` explicitly —
+  horizontal tab scrolling is unaffected.
 
 **Real bug, easy to misdiagnose as a cookie/session problem**: the Socket.IO client script
 was loaded via a plain relative `<script src="socket.io/socket.io.js">`. Relative URLs
