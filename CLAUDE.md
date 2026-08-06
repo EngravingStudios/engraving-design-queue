@@ -526,12 +526,15 @@ Zip contains two things, both generated fresh on each click, nothing stored on d
   order, Unknown if neither does — mutually exclusive by design, not per-line tagging, since
   the ask was a shipping-prep list of order NUMBERS.
 - `packing-sheets.pdf` — one A4 page per qualifying order via `pdfkit`. An order qualifies if
-  EITHER its product titles contain any of Garden/Wall/Plinth/Mount, OR `internal_notes`
-  (§7b) contains any of Urgent/Must go/Brushed/No paint/No infill — either alone is
-  sufficient, not both. Each page: customer name (`first_name`+`last_name`), shipping method
-  (`ship_station_carrier_services.name`, joined via `orders.ship_station_service`), every
-  line's item name/qty/engraving, the internal-notes warning if present, and the proof image
-  if available.
+  EITHER its product titles contain any of Garden/Wall/Plinth/Mount, OR any of
+  Urgent/Must go/Brushed/No paint/No infill shows up in `internal_notes` (§7b) OR any line's
+  `back_engraving` — any one of the three alone is sufficient, not all required. The
+  note-style keywords deliberately check both fields (added 2026-08-06): the same phrases
+  can show up as office-entered instructions or as customer-typed back-plate text, and
+  either placement means the same thing for packing purposes. Each page: customer name
+  (`first_name`+`last_name`), shipping method (`ship_station_carrier_services.name`, joined
+  via `orders.ship_station_service`), every line's item name/qty/engraving, the
+  internal-notes warning if present, and the proof image if available.
 
 **Deliberately a SEPARATE query from `queue.js`'s `fetchQueue()`** (`lib/summary.js`), not a
 reuse — `fetchQueue()` excludes `group_id=15` (fixings) from the design view (§2), but a
