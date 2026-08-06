@@ -42,5 +42,7 @@
 
   "staff": ["Alisha", "Andy", "Callum", "Drew", "Gary", "James", "Mandy", "Mikey"],
 
-  "fulfilmentOrderUrl": "https://fulfilment.engravingstudios.co.uk/orders/"
+  "fulfilmentOrderUrl": "https://fulfilment.engravingstudios.co.uk/orders/",
+
+  "proofImageBaseUrl": "https://fulfilment.engravingstudios.co.uk/uploads/orderproofs/"
 }

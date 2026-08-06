@@ -60,6 +60,11 @@
      which tab is currently active). */
   .split-icon{cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:5px;border:1px solid var(--panel-edge);background:transparent;color:var(--ink-dim);flex-shrink:0;transition:all .15s}
   .split-icon:hover{color:var(--brass-hi);border-color:var(--brass)}
+  /* Summary-file icon — same treatment as the split icon, sits
+     alongside it inline with the tab label. Triggers a zip download
+     (material breakdown + packing sheets) for that batch. */
+  .summary-icon{cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:5px;border:1px solid var(--panel-edge);background:transparent;color:var(--ink-dim);flex-shrink:0;transition:all .15s}
+  .summary-icon:hover{color:var(--brass-hi);border-color:var(--brass)}
   /* A/B/All filter pills — rendered as a second row under the tab
      label they belong to, so it's visually obvious which batch
      they're filtering. Only interactive on the active tab; a split
@@ -480,6 +485,11 @@ function typeColour(name, productId, override){
    it follows the tab's own text colour (dim, brightens on hover). */
 const SPLIT_ICON_SVG = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v6M12 10l-6 7M12 10l6 7"/><circle cx="12" cy="4" r="1.6" fill="currentColor" stroke="none"/><circle cx="6" cy="19" r="1.6" fill="currentColor" stroke="none"/><circle cx="18" cy="19" r="1.6" fill="currentColor" stroke="none"/></svg>`;
 
+/* Small "document" glyph for the per-tab summary-file icon (material
+   breakdown + packing sheets zip) — same currentColor convention as
+   SPLIT_ICON_SVG above. */
+const SUMMARY_ICON_SVG = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>`;
+
 function renderTabs(){
   const tabsEl=$("tabs");
   tabsEl.innerHTML="";
@@ -496,6 +506,27 @@ function renderTabs(){
     top.className="tab-top";
     top.innerHTML=`<span>${esc(s.label)}</span><span class="count">${counts[s.value] ?? 0}</span>`;
     t.appendChild(top);
+
+    /* Summary-file icon — every batch tab, independent of A/B split
+       state (unlike the split icon below, this isn't replaced by
+       anything once clicked; it's a one-off download, not a toggled
+       mode). Plain navigation to the endpoint, not fetch+blob — lets
+       Content-Disposition trigger a native browser download without
+       leaving the page. No reliable "done" event for that, so a toast
+       is the honest acknowledgment rather than a spinner pretending to
+       track real completion. */
+    if(isBatch(s.value)){
+      const summaryIcon=document.createElement("button");
+      summaryIcon.className="summary-icon";
+      summaryIcon.title=`Prepare summary file for this status`;
+      summaryIcon.innerHTML=SUMMARY_ICON_SVG;
+      summaryIcon.addEventListener("click", (e)=>{
+        e.stopPropagation();
+        toast(`Preparing summary file for ${s.label} — download will start shortly`);
+        window.location.href=BASE+"/api/summary/"+encodeURIComponent(s.value);
+      });
+      top.appendChild(summaryIcon);
+    }
 
     /* Split icon lives on EVERY batch tab (not just the active one),
        so any batch can be split without switching to it first. Once

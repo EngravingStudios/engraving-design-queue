@@ -62,8 +62,10 @@ needs a full `sudo -u svc-designqueue -H pm2 kill` followed by a fresh `pm2 star
 ## Behavior specification
 
 ### 1. Non-negotiable constraints
-- **Zero fulfilment database schema changes.** No new columns, no new tables. The app only
-  SELECTs from `orders`, `items`, `products`, `sanitise`. The ONE exception:
+- **Zero fulfilment database schema changes.** No new columns, no new tables — only new
+  grants on existing ones as features need them (§8b added `proofs`/
+  `ship_station_carrier_services`). The app only SELECTs from `orders`, `items`, `products`,
+  `sanitise`, `proofs`, `ship_station_carrier_services`. The ONE exception:
   `UPDATE orders SET status=...` for batch-move and issue-raising — that's the app's actual
   job, not incidental state.
 - **Database is DigitalOcean managed MySQL** (remote host, port 25060, requires TLS). Not
@@ -507,6 +509,65 @@ in a separate control area.
   attributed to a name on disk — kept for UX consistency with tick/move/issue, not because
   the split itself needs an audit trail.
 
+### 8b. Batch summary file — material breakdown + packing sheets (added 2026-08-06)
+A small document-glyph icon sits inline next to the split icon on EVERY batch tab (1-4
+only, same scope as §8a — Label Hold/Pending don't get one), title "Prepare summary file
+for this status". Click → plain navigation to `GET /api/summary/:status` (not fetch+blob) —
+`Content-Disposition: attachment` lets the browser handle the download natively without
+leaving the page. No reliable "download finished" event exists for a plain navigation the
+way there is for Move's socket ack, so a toast on click is the honest acknowledgment rather
+than a spinner pretending to track real completion.
+
+Zip contains two things, both generated fresh on each click, nothing stored on disk:
+- `material-breakdown.txt` — every order in that batch, in exactly ONE of four lists (Brass
+  / Aluminium / Mixed / Unknown), based on a case-insensitive substring match for "Brass"/
+  "Aluminium" against each line's product title (or raw item name for unmapped items, same
+  fallback `queue.js` already uses). Mixed if a title match for BOTH exists anywhere in the
+  order, Unknown if neither does — mutually exclusive by design, not per-line tagging, since
+  the ask was a shipping-prep list of order NUMBERS.
+- `packing-sheets.pdf` — one A4 page per qualifying order via `pdfkit`. An order qualifies if
+  EITHER its product titles contain any of Garden/Wall/Plinth/Mount, OR `internal_notes`
+  (§7b) contains any of Urgent/Must go/Brushed/No paint/No infill — either alone is
+  sufficient, not both. Each page: customer name (`first_name`+`last_name`), shipping method
+  (`ship_station_carrier_services.name`, joined via `orders.ship_station_service`), every
+  line's item name/qty/engraving, the internal-notes warning if present, and the proof image
+  if available.
+
+**Deliberately a SEPARATE query from `queue.js`'s `fetchQueue()`** (`lib/summary.js`), not a
+reuse — `fetchQueue()` excludes `group_id=15` (fixings) from the design view (§2), but a
+packing sheet needs every physical item going in the box, fixings included. Reusing the
+filtered query would silently under-report what's actually being shipped.
+
+**Proof image — fetched live over HTTP, not read from a local path**: `proofs.file` is just
+a filename; the actual image lives at a fixed public URL under the fulfilment app
+(`proofImageBaseUrl` in config — `https://fulfilment.engravingstudios.co.uk/uploads/orderproofs/{file}`),
+not on this droplet's filesystem or in the database. A missing proof row, or a failed fetch
+(404/network issue), just omits the image from that one page rather than failing the whole
+batch's zip — one order's absent proof shouldn't block everyone else's packing sheets. Each
+order has at most one live `proofs` row (`suppress = 0`) — confirmed 1:1 with orders in
+practice, so this is a plain `LEFT JOIN`, not a "pick the right one of several" query.
+
+**New DB grants, added 2026-08-06** (see Deployment guide §1) — first genuinely new PII this
+app can read, added deliberately and narrowly: `orders.first_name`/`last_name` (customer
+name) and `orders.ship_station_service` (an ID, not the readable method — joined against
+`ship_station_carrier_services.name` for that), plus full-table `SELECT` on
+`ship_station_carrier_services` (a shipping-method lookup table, no customer data in it) and
+column-level `SELECT` on `proofs` (`order_id`, `file`, `suppress` — not `customer_notes` or
+`internal_notes` on that table, which aren't needed here). Still explicitly NOT
+address/phone/email/company — those stay off-limits, same boundary as §13 always had, just
+with two more narrow exceptions carved into it for this one feature.
+
+**pdfkit's built-in Helvetica font is WinAnsi-encoded, not full Unicode** — a "⚠" character
+in the internal-notes warning silently rendered as a stray "&" glyph instead of failing
+loudly. Fixed by using a plain "WARNING -" text prefix instead of the Unicode symbol, rather
+than embedding a Unicode-capable TTF font just for one glyph.
+
+**`archiver` v8 dropped the classic `archiver('zip', opts)` factory function for a
+class-based API** (`new (require('archiver').ZipArchive)(opts)`) — most existing
+docs/examples online (and an earlier draft of this code) assume the old factory shape from
+v5-v7, which throws `TypeError: archiver is not a function` on v8. Confirmed against the
+installed version's own README, not assumed from memory.
+
 ### 9. Issue flag → HelpScout → Pending
 Per-line "⛔ Issue" button (red on hover), positioned right of the Verified tick. Opens a
 modal requiring free-text notes (blocked until non-empty) — "this will create a HelpScout
@@ -633,10 +694,18 @@ pills. Fix: compute the script's path explicitly via `document.write` using the 
 
 ### 13. Database user (least privilege)
 Managed DB → user host is `%`, not `localhost`. Grant SELECT only on `orders` (`id`,
-`status`, `internal_notes` columns), `items`, `products`, `sanitise`, plus UPDATE on
-`orders.status` only. No UPDATE on `items` at all (ticks aren't stored there). No DELETE
-anywhere. This user should not be able to read customer names/addresses/phones/emails at
-all — column-level grants, not table-level, on `orders`.
+`status`, `internal_notes`, `first_name`, `last_name`, `ship_station_service` columns),
+`items`, `products`, `sanitise`, `ship_station_carrier_services` (full table — a
+shipping-method lookup table, no customer data in it), `proofs` (`order_id`, `file`,
+`suppress` columns only), plus UPDATE on `orders.status` only. No UPDATE on `items` at all
+(ticks aren't stored there). No DELETE anywhere.
+
+**Customer name is now readable (added 2026-08-06, for packing sheets — see §8b)** — the
+boundary this app was originally built around was never "zero customer data," it was
+"nothing beyond what a specific feature genuinely needs." Still explicitly excluded:
+address, phone, email, company — those stay off-limits. Column-level grants, not
+table-level, on `orders` — every new PII exception is a deliberate, narrow addition, not a
+broadening of the boundary itself.
 
 ### 14. Non-goals / things explicitly rejected during design
 - No per-user login accounts (one shared login, name pills for attribution instead).
@@ -663,34 +732,42 @@ all — column-level grants, not table-level, on `orders`.
 
 ### 1. Database setup
 **No schema changes.** The fulfilment database schema is untouched — no new columns, no
-new tables. The app only ever runs SELECT against `orders`, `items`, `products` and
-`sanitise`, plus one UPDATE to the `orders.status` column when a batch is moved or an
-issue is raised — that's the app doing its actual job, not a schema change. Design/verify
-tick state and any colour overrides live in small JSON files inside the app's own folder
-(`data/ticks.json`, `data/product-colours.json`) — see §7 above. Ticks intentionally have
-no audit trail (beyond §7a's order-level breadcrumb) and expire automatically after 3 days.
+new tables. The app only ever runs SELECT against `orders`, `items`, `products`, `sanitise`,
+`proofs`, `ship_station_carrier_services`, plus one UPDATE to the `orders.status` column
+when a batch is moved or an issue is raised — that's the app doing its actual job, not a
+schema change. Design/verify tick state and any colour overrides live in small JSON files
+inside the app's own folder (`data/ticks.json`, `data/product-colours.json`) — see §7 above.
+Ticks intentionally have no audit trail (beyond §7a's order-level breadcrumb) and expire
+automatically after 3 days.
 
 Dedicated database user (least privilege — pure read access plus the one UPDATE the app is
-actually for; cannot read customer names/addresses/phones/emails, cannot delete anything
+actually for; cannot read customer address/phone/email/company, cannot delete anything
 anywhere). Database is DigitalOcean managed MySQL, so the user host is `%`, not
 `localhost`:
 
 ```sql
 CREATE USER 'design_app'@'%' IDENTIFIED BY 'CHOOSE_A_STRONG_PASSWORD';
 
-GRANT SELECT (id, status, internal_notes) ON fulfilment.orders   TO 'design_app'@'%';
+GRANT SELECT (id, status, internal_notes,
+              first_name, last_name, ship_station_service) ON fulfilment.orders TO 'design_app'@'%';
 GRANT UPDATE (status)                     ON fulfilment.orders   TO 'design_app'@'%';
 GRANT SELECT                              ON fulfilment.items    TO 'design_app'@'%';
 GRANT SELECT                              ON fulfilment.products TO 'design_app'@'%';
 GRANT SELECT                              ON fulfilment.sanitise TO 'design_app'@'%';
 GRANT INSERT                              ON fulfilment.notes    TO 'design_app'@'%';
+GRANT SELECT (order_id, file, suppress)   ON fulfilment.proofs   TO 'design_app'@'%';
+GRANT SELECT                              ON fulfilment.ship_station_carrier_services TO 'design_app'@'%';
 
 FLUSH PRIVILEGES;
 ```
 
 `internal_notes` (added 2026-08-04, see §7b) lets office staff flag order-specific
 instructions that surface as a red warning banner in the queue — read-only, same
-column-level-grant pattern as `id`/`status`.
+column-level-grant pattern as `id`/`status`. `first_name`/`last_name`/
+`ship_station_service`, plus `proofs` and `ship_station_carrier_services`, were added
+2026-08-06 for the packing-sheet feature (§8b) — the first genuinely new customer PII this
+app can read, added narrowly and deliberately; address/phone/email/company are still
+off-limits.
 
 Notes:
 - If the DO database has "trusted sources" configured, the droplet is presumably already
@@ -850,6 +927,10 @@ All `pm2`/log commands below run as the `svc-designqueue` system user, e.g.
 - Logs: `pm2 logs design-queue`. Issue-ticket failures appear here — if HelpScout is down,
   the order is NOT moved to pending (deliberate: no order ever parks in pending without a
   ticket behind it).
+- Summary-file zip (§8b) generates fresh on every click — nothing stored, nothing to clean
+  up. If a packing sheet is missing its proof image, check the logs for
+  `[packing-sheet] proof image fetch failed` — that order's sheet still generates, just
+  without the image (deliberate, see §8b), so this is informational, not a failure to chase.
 - Back up `data/` alongside your normal droplet backups if you want belt-and-braces on
   in-flight ticks — not critical (they self-expire and staff can re-tick in seconds), but
   free insurance if you're already snapshotting the box.

@@ -7,6 +7,7 @@ const session = require("express-session");
 const FileStore = require("session-file-store")(session);
 const bcrypt = require("bcryptjs");
 const { Server } = require("socket.io");
+const { ZipArchive } = require("archiver"); // v8 dropped the archiver('zip', opts) factory for a class-based API
 
 const db = require("./lib/db");
 const queue = require("./lib/queue");
@@ -14,6 +15,8 @@ const helpscout = require("./lib/helpscout");
 const ticks = require("./lib/ticks");
 const colours = require("./lib/colours");
 const batchSplits = require("./lib/batchSplits");
+const summary = require("./lib/summary");
+const packingSheet = require("./lib/packingSheet");
 
 const config = require("./lib/config").load(
   path.join(__dirname, "config.json")
@@ -27,6 +30,7 @@ helpscout.init(config.helpscout);
 ticks.init(DATA_DIR);        // file-backed tick state — see lib/ticks.js
 colours.init(DATA_DIR);      // optional colour overrides — see lib/colours.js
 batchSplits.init(DATA_DIR);  // file-backed A/B split state — see lib/batchSplits.js
+packingSheet.init(config);   // proof image base URL — see lib/packingSheet.js
 
 const app = express();
 app.set("trust proxy", 1); // behind Nginx
@@ -116,6 +120,55 @@ router.get("/api/queue", requireAuth, async (req, res) => {
   } catch (e) {
     console.error("[api/queue]", e);
     res.status(500).json({ error: "queue fetch failed" });
+  }
+});
+
+/* Material breakdown (.txt) + packing sheets (.pdf) for a batch,
+   zipped and streamed straight back — a plain navigation (not a
+   fetch+blob) so the browser handles the download via
+   Content-Disposition natively. Batch tabs only (1-4), same scope as
+   the split icon this sits alongside — see lib/summary.js for why the
+   underlying query is deliberately separate from queue.js's. */
+router.get("/api/summary/:status", requireAuth, async (req, res) => {
+  try {
+    const status = req.params.status;
+    const batch = config.statuses.batches.find((b) => b.value === status);
+    if (!batch) return res.status(400).json({ error: "unknown batch" });
+
+    const orders = await summary.fetchOrdersForSummary(status);
+    const materialText = summary.buildMaterialListText(
+      batch.label,
+      summary.categoriseMaterials(orders)
+    );
+    const packingOrders = summary.ordersNeedingPackingSheet(orders);
+
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${status}-summary-${dateStamp}.zip"`
+    );
+
+    const archive = new ZipArchive({ zlib: { level: 9 } });
+    archive.on("error", (e) => {
+      console.error("[api/summary] archive error", e);
+      res.destroy(e);
+    });
+    archive.pipe(res);
+    archive.append(materialText, { name: "material-breakdown.txt" });
+    if (packingOrders.length) {
+      const pdfDoc = await packingSheet.generatePackingSheetsPdf(packingOrders);
+      archive.append(pdfDoc, { name: "packing-sheets.pdf" });
+    }
+    await archive.finalize();
+  } catch (e) {
+    console.error("[api/summary]", e);
+    // Headers may already be sent by the time a mid-stream error hits
+    // (archive/pdf generation happens after Content-Disposition is
+    // set) — a JSON error body at that point would just corrupt the
+    // zip the browser's already started downloading.
+    if (!res.headersSent) res.status(500).json({ error: "summary generation failed" });
+    else res.destroy(e);
   }
 });
 
