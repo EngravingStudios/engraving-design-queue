@@ -576,6 +576,15 @@ the actual note text (`doc.heightOfString()`) before drawing the border, not gue
 a fixed-height box would either clip a long note or leave visible dead space around a short
 one.
 
+**Second styling round (2026-08-06)**: dropped the "Internal notes: " label — the bordered
+box already makes it unambiguous what the text is, the label was redundant. Note text is
+now `align:"center"` both ways — horizontally via that option, vertically "for free" since
+the box height is `text height + boxPad` on both top and bottom (equal padding either side
+of the text centres it without any extra positioning logic). Order number heading dropped
+its "#" prefix too (`Order 372407`, not `Order #372407`) — the material-breakdown.txt list
+still uses "#371969"-style prefixes, that wasn't asked to change and reads fine as a plain
+reference list rather than a page heading.
+
 **`archiver` v8 dropped the classic `archiver('zip', opts)` factory function for a
 class-based API** (`new (require('archiver').ZipArchive)(opts)`) — most existing
 docs/examples online (and an earlier draft of this code) assume the old factory shape from
