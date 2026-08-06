@@ -581,9 +581,25 @@ box already makes it unambiguous what the text is, the label was redundant. Note
 now `align:"center"` both ways — horizontally via that option, vertically "for free" since
 the box height is `text height + boxPad` on both top and bottom (equal padding either side
 of the text centres it without any extra positioning logic). Order number heading dropped
-its "#" prefix too (`Order 372407`, not `Order #372407`) — the material-breakdown.txt list
-still uses "#371969"-style prefixes, that wasn't asked to change and reads fine as a plain
-reference list rather than a page heading.
+its "#" prefix too (`Order 372407`, not `Order #372407`).
+
+**Two real bugs, found once real order data was tried (2026-08-06)**:
+- `material-breakdown.txt`'s order list also dropped its "#" prefix (`371969`, not
+  `#371969`) for consistency with the PDF heading above, once actually asked for.
+- **`internal_notes` rendered a stray "Ð" glyph in place of every line break.** The raw DB
+  value has literal `\r\n` line endings; engraving text already gets `\r\n`/`\r` -> `\n`
+  normalised by `applyRules()` (§3), but `internal_notes` isn't engraving text and was never
+  run through that same cleanup — so the raw `\r` byte hit pdfkit directly, and its WinAnsi
+  font encoding renders that stray control character as a garbage glyph instead of a line
+  break. Fixed in `lib/summary.js` at the point `internalNotes` is read from the query
+  result — same normalisation as `applyRules()`, applied once at the source rather than
+  wherever it's rendered.
+- **The summary's "Generated" timestamp was an hour behind actual UK time.**
+  `new Date().toISOString()` is always UTC; during British Summer Time (late Mar-late Oct)
+  that reads an hour behind. Fixed with `Intl.DateTimeFormat` pinned to the `Europe/London`
+  timezone (`formatUkTimestamp()`) rather than a hardcoded UTC+1 offset — a fixed offset
+  would be wrong for the other ~5 months of the year when the UK is on GMT; the named
+  timezone handles the GMT/BST switch itself, no manual adjustment needed twice a year.
 
 **`archiver` v8 dropped the classic `archiver('zip', opts)` factory function for a
 class-based API** (`new (require('archiver').ZipArchive)(opts)`) — most existing
