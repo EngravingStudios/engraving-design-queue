@@ -534,12 +534,23 @@ Zip contains two things, both generated fresh on each click, nothing stored on d
     means the same thing for packing purposes)
   - `internal_notes` OR any line's `back_engraving` mentions a paint colour (added
     2026-08-06): a colour word (red/blue/green/black/gold/etc. — see `PAINT_COLOUR_WORDS`
-    in `lib/summary.js`) anywhere in the same field as the word "paint" — e.g. "red paint",
-    "roundel blue paint". Deliberately NOT an exact-phrase list like the keywords above:
-    real phrasing varies too much in word order/spacing to pin down ("paint it red" vs "red
-    paint" vs "roundel blue paint"), so this checks co-occurrence anywhere in the field
-    rather than adjacency. Over-flagging a borderline note is a much smaller cost than
-    missing a real paint instruction.
+    in `lib/summary.js`) OR a RAL/BS colour reference code (`PAINT_COLOUR_CODE_PATTERN`,
+    e.g. "RAL 6037", "BS4800 04 D 45", "bs381c-166" — a code is just another way of naming
+    a colour, checked the same way) anywhere in the same field as the word "paint" — e.g.
+    "red paint", "roundel blue paint", "RAL 6037 for paint". Deliberately NOT an
+    exact-phrase list like the keywords above: real phrasing varies too much in word
+    order/spacing to pin down ("paint it red" vs "red paint" vs "roundel blue paint"), so
+    this checks co-occurrence anywhere in the field rather than adjacency. Over-flagging a
+    borderline note is a much smaller cost than missing a real paint instruction.
+
+  **Verified against 300 real `shipped`-status orders containing the word "paint"
+  somewhere** (a quick read-only query, not part of the app itself) before shipping this:
+  115 correctly matched (colour words + RAL/BS codes), confirmed zero false positives from
+  words merely containing "bs" as a substring ("ABS", "tabs", "bespoke", etc. — the `\b`
+  word-boundary + required-following-digit in `PAINT_COLOUR_CODE_PATTERN` is what prevents
+  that). Explicitly **not** extended to catch "GBT PAINT"/"REPAINT"/"PAINTING ISSUE" even
+  though they're common in the same real data — confirmed these are internal delay/status
+  notes for staff awareness, not something a packing sheet needs to surface.
 
   Each page: customer name (`first_name`+`last_name`), shipping method
   (`ship_station_carrier_services.name`, joined via `orders.ship_station_service`), every
