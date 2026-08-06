@@ -559,8 +559,22 @@ with two more narrow exceptions carved into it for this one feature.
 
 **pdfkit's built-in Helvetica font is WinAnsi-encoded, not full Unicode** — a "⚠" character
 in the internal-notes warning silently rendered as a stray "&" glyph instead of failing
-loudly. Fixed by using a plain "WARNING -" text prefix instead of the Unicode symbol, rather
-than embedding a Unicode-capable TTF font just for one glyph.
+loudly. Fixed by dropping the Unicode symbol entirely, rather than embedding a
+Unicode-capable TTF font just for one glyph — moot anyway once the styling pass below
+replaced the warning-text treatment with a bordered box.
+
+**Styling pass (2026-08-06), confirmed explicitly**: bold label / regular value for every
+field (`Customer:`, `Shipping method:`, `Front:`, `Back:`) via pdfkit's `{continued:true}`
+pattern — its built-in text() has no inline rich-text markup, so a bold label and a
+regular-weight value on the same line means two chained `.text()` calls, not one. A thin
+grey horizontal rule separates each line item from the next, so a multi-item order (e.g.
+plaque + backing board) doesn't visually run together. `internalNotes` moved from red
+warning text to a bold black bordered box instead — this is routine shop-floor guidance
+("give to Andy to send"), not an error state, so a loud red no longer fit; the box still
+makes it impossible to miss without reading as an alarm. The box's height is measured from
+the actual note text (`doc.heightOfString()`) before drawing the border, not guessed —
+a fixed-height box would either clip a long note or leave visible dead space around a short
+one.
 
 **`archiver` v8 dropped the classic `archiver('zip', opts)` factory function for a
 class-based API** (`new (require('archiver').ZipArchive)(opts)`) — most existing
