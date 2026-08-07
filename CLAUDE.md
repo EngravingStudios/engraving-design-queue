@@ -525,6 +525,18 @@ Zip contains two things, both generated fresh on each click, nothing stored on d
   fallback `queue.js` already uses). Mixed if a title match for BOTH exists anywhere in the
   order, Unknown if neither does — mutually exclusive by design, not per-line tagging, since
   the ask was a shipping-prep list of order NUMBERS.
+  - **Unknown is also repurposed as "needs manual handling" (added 2026-08-07)** —
+    `needsManualMaterialHandling()` in `lib/summary.js` checked BEFORE the Brass/Aluminium/
+    Mixed logic above, so it always wins regardless of what the order would otherwise
+    categorise as. Two triggers, both case-insensitive substring matches: (1) **"1mm
+    Brass"** anywhere in a line's product name, a line's back engraving, OR
+    `internal_notes` — thin-grade brass isn't processed with the main batch; (2) **"Put
+    through wash"** anywhere in a line's back engraving OR `internal_notes` (deliberately
+    NOT product name — this is a handling instruction, not a material description, so it
+    only ever shows up as customer-typed back text or office-entered notes). Both are
+    fixed literal keywords, same style as `PACKING_NOTE_KEYWORDS` below, not a fuzzy
+    match — confirmed as the wanted behaviour, not extended to catch phrasing variants
+    unless asked.
 - `packing-sheets.pdf` — one A4 page per qualifying order via `pdfkit`. An order qualifies if
   ANY of the following is true — no combination required:
   - product titles contain any of Garden/Wall/Plinth/Mount
